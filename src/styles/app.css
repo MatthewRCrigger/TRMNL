@@ -724,6 +724,12 @@
   text-overflow: ellipsis;
 }
 
+/* Pushes the status cluster to the right edge without drawing anything. */
+.block__gap {
+  flex: 1;
+  min-width: 8px;
+}
+
 .block__actions {
   display: flex;
   gap: 5px;

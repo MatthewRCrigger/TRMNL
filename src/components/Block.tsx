@@ -94,7 +94,10 @@ export const Block = memo(function Block({
       <div className="block__head">
         <span className="block__prompt">❯</span>
         <span className="block__cmd">{block.cmd}</span>
-        <span className="rule" />
+        {/* Spacer only. The design used a hairline here to separate the command
+            from its status, but that was for the spine-only layout — the box now
+            provides the separation and the rule just adds noise. */}
+        <span className="block__gap" />
 
         {running ? (
           <button className="block__cancel no-drag" onClick={onCancel} type="button">
