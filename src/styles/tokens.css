@@ -1,0 +1,109 @@
+/* TRMNL design tokens.
+ *
+ * Verbatim from the handoff, which lifted them from educlopez/thegridcn-ui.
+ *
+ * The load-bearing property here: every neutral is derived from --ac via
+ * color-mix, so setting --ac recolours the entire interface. Do not replace any
+ * of these derivations with a literal value — that is what makes the identity
+ * switcher work.
+ */
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('../fonts/geist-mono.woff2') format('woff2-variations');
+  font-weight: 300 600;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Orbitron';
+  src: url('../fonts/orbitron.woff2') format('woff2-variations');
+  font-weight: 400 900;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('../fonts/rajdhani.woff2') format('woff2');
+  font-weight: 500 700;
+  font-display: block;
+}
+
+:root {
+  /* --- Identity (accent). Default: USER. ---------------------------------- */
+  --ac: oklch(0.93 0.045 220);
+  --acd: color-mix(in oklch, var(--ac) 55%, #000);
+
+  /* --- Surfaces ---------------------------------------------------------- */
+  --bg: oklch(0.055 0.018 250);
+  --pnl: #0a0f19;
+  --card: oklch(0.095 0.02 250);
+
+  /* Intentional hard-coded surfaces, per the handoff's "all intentional" list. */
+  --page: #07090d;
+  --rail: #080d15;
+  --well: #070c14;
+  --pane-idle: #05080e;
+
+  /* --- Hairlines and fills, all accent-derived ---------------------------- */
+  --bd: color-mix(in oklch, var(--ac) 26%, transparent);
+  --bd2: color-mix(in oklch, var(--ac) 13%, transparent);
+  --wash: color-mix(in oklch, var(--ac) 8%, transparent);
+  --wash2: color-mix(in oklch, var(--ac) 3.5%, transparent);
+
+  /* --- Text -------------------------------------------------------------- */
+  --fg: oklch(0.94 0.02 220);
+  --fgd: oklch(0.66 0.015 220);
+  --fgdd: oklch(0.47 0.012 220);
+
+  /* --- State ------------------------------------------------------------- */
+  --err: oklch(0.64 0.23 28);
+  --warn: oklch(0.78 0.17 62);
+
+  /* --- Type -------------------------------------------------------------- */
+  --mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ui: 'Rajdhani', system-ui, sans-serif;
+  --display: 'Orbitron', system-ui, sans-serif;
+
+  /* Density: drives block output line-height only. Default normal. */
+  --lh: 1.62;
+
+  /* The type floor. The prototype used 8.5–9px; the handoff requires 10px in
+   * production. These two are the only micro-label sizes — keep them here so the
+   * floor cannot drift back down in individual components. */
+  --t-micro: 10px;
+  --t-label: 10px;
+}
+
+/* --- Density ------------------------------------------------------------- */
+
+:root[data-density='compact'] { --lh: 1.42; }
+:root[data-density='normal']  { --lh: 1.62; }
+:root[data-density='roomy']   { --lh: 1.9; }
+
+/* --- Animation. The complete set; the handoff says do not add more. ------- */
+
+@keyframes blk {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes pul {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+@keyframes spn {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The caret still needs to read as a caret, so it keeps blinking; the
+   * decorative pulse and spin do not. */
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .caret { animation: blk 1.1s step-end infinite !important; }
+}
