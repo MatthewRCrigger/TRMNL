@@ -135,7 +135,7 @@ export function App() {
                 aria-orientation={splitDir === 'row' ? 'vertical' : 'horizontal'}
                 aria-label="Resize panes"
               >
-                <DividerTrace dir={splitDir} />
+                <DividerTrace />
                 <span className="divider__grip" />
               </div>
 
@@ -221,27 +221,30 @@ function IdentitySweep({ id, color }: { id: number; color: string }) {
 /**
  * The divider drawing itself along its length when a split is created.
  *
- * Mounted once per split and self-removing: `appeared` flips false on
- * animationend, which drops the element so nothing re-animates on a re-render or
- * during a drag. The trace never sees pointer events, so onDividerDown/Move/Up
- * behave identically whether or not it is still on screen.
+ * Fires on appearance only. The parent mounts this with the divider, and
+ * `appeared` latches false once the trace is done, which unmounts the element —
+ * so a re-render, a drag, or a later change of split axis cannot re-trigger it.
+ * The divider itself is never animated: the trace is a throwaway child, so the
+ * full 4px hit area is draggable from the first frame and onDividerDown/Move/Up
+ * are untouched. It also never sees pointer events (`pointer-events: none`).
+ *
+ * animationend is the normal teardown; the timer is the backstop for when it does
+ * not arrive (throttled frames in a hidden window, a user stylesheet killing the
+ * animation). Whichever fires first wins and the other is a no-op.
  */
-function DividerTrace({ dir }: { dir: 'row' | 'col' }) {
+function DividerTrace() {
   const [appeared, setAppeared] = useState(true)
 
   useEffect(() => {
-    // Backstop for the same reasons as the sweep: no animationend, no cleanup.
     const timer = window.setTimeout(() => setAppeared(false), 400)
     return () => clearTimeout(timer)
   }, [])
 
   if (!appeared) return null
 
-  // Keyed on direction so switching split axis while split re-traces along the
-  // new length rather than animating a stale origin.
+  // data-dir on the parent .divider selects the axis; see .divider__trace.
   return (
     <span
-      key={dir}
       className="divider__trace"
       onAnimationEnd={() => setAppeared(false)}
       aria-hidden
