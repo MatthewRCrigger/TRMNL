@@ -11,9 +11,15 @@
  * touching the block model.
  */
 
-import { EXIT_NOT_FOUND, type BuildRoute, type GitGroup, type Structured } from './types'
+import {
+  EXIT_NOT_FOUND,
+  type BuildRoute,
+  type GitGroup,
+  type ListEntry,
+  type Structured,
+} from './types'
 
-export type RendererId = 'build' | 'git' | 'serve' | 'err'
+export type RendererId = 'build' | 'git' | 'serve' | 'err' | 'list'
 
 export interface Renderer {
   id: RendererId
@@ -28,6 +34,7 @@ let enabled: Record<RendererId, boolean> = {
   git: true,
   serve: true,
   err: true,
+  list: true,
 }
 
 export function setRendererEnabled(next: Partial<Record<RendererId, boolean>>): void {
@@ -325,9 +332,107 @@ function editDistance(a: string, b: string): number {
   return prev[b.length] ?? 0
 }
 
+/* --- list: directory listing table ---------------------------------------- */
+
+/**
+ * `ls -l` long-format row:
+ *   drwxr-xr-x@  73 matthewcrigger  staff   2336 Aug  1 04:18 name
+ *   -rw-r--r--    1 user            group     42 Nov 12  2024 name with spaces
+ *   lrwxr-xr-x    1 user            group      7 Jan  3 09:00 link -> target
+ *
+ * Fields are matched positionally and the name takes the entire remainder, so a
+ * filename containing spaces stays intact — splitting on whitespace would
+ * truncate `AdGuard for Safari.app`.
+ *
+ * The date is either `Mon DD HH:MM` (recent) or `Mon DD  YYYY` (older); both are
+ * covered by the same group.
+ */
+const LS_ROW =
+  /^([dlbcps-][rwxSsTt@+.-]{9,11})\s+(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\w{3}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4}))\s+(.+)$/
+
+const listRenderer: Renderer = {
+  id: 'list',
+  matches: (cmd, code) =>
+    code === 0 && /^\s*(?:\w+\s+)*ls\b(?=[^|]*(?:-\w*l|--long))/.test(cmd) && !/\|/.test(cmd),
+  parse(output) {
+    const entries: ListEntry[] = []
+    let total: string | undefined
+
+    for (const raw of output.split('\n')) {
+      const line = raw.trimEnd()
+      if (!line) continue
+
+      const totalMatch = /^total\s+(\d+)$/.exec(line)
+      if (totalMatch?.[1]) {
+        total = totalMatch[1]
+        continue
+      }
+
+      const m = LS_ROW.exec(line)
+      if (!m) continue
+
+      const [, perms, , owner, , bytes, modified, rest] = m
+      if (!perms || !owner || !bytes || !modified || !rest) continue
+
+      // `name -> target` only counts as a symlink when the mode says so; a file
+      // can legitimately be named with an arrow.
+      const isLink = perms.startsWith('l')
+      let name = rest
+      let target: string | undefined
+      if (isLink) {
+        const arrow = rest.indexOf(' -> ')
+        if (arrow !== -1) {
+          name = rest.slice(0, arrow)
+          target = rest.slice(arrow + 4)
+        }
+      }
+
+      // `.` and `..` are noise in a table; the header already says where we are.
+      if (name === '.' || name === '..') continue
+
+      const isDir = perms.startsWith('d')
+      const isExec = !isDir && !isLink && /x/.test(perms.slice(1, 10))
+
+      entries.push({
+        name,
+        kind: isLink ? 'link' : isDir ? 'dir' : isExec ? 'exec' : 'file',
+        size: isDir ? '—' : humanSize(Number.parseInt(bytes, 10)),
+        modified: modified.replace(/\s+/g, ' '),
+        perms,
+        owner,
+        target,
+        hidden: name.startsWith('.'),
+      })
+    }
+
+    // One row is not a table worth drawing, and zero means we misread the shape.
+    if (entries.length < 2) return null
+    return { kind: 'list', entries, total }
+  },
+}
+
+function humanSize(bytes: number): string {
+  if (!Number.isFinite(bytes)) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['kB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
+}
+
 /* --- registry ------------------------------------------------------------- */
 
-export const renderers: Renderer[] = [errRenderer, buildRenderer, gitRenderer, serveRenderer]
+export const renderers: Renderer[] = [
+  errRenderer,
+  buildRenderer,
+  gitRenderer,
+  serveRenderer,
+  listRenderer,
+]
 
 /** Try each enabled renderer in order; first non-null wins. */
 export function detectStructured(

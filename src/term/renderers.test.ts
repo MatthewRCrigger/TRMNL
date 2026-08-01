@@ -160,6 +160,101 @@ describe('error renderer', () => {
   })
 })
 
+describe('list renderer', () => {
+  // Captured from a real macOS `ls -la`, including the trailing @ and + mode
+  // flags that BSD ls emits for xattrs and ACLs.
+  const LS = `total 1752
+drwxr-x---+   73 matthewcrigger  staff    2336 Aug  1 04:18 .
+drwxr-xr-x     5 root            admin     160 Jul  7 04:35 ..
+-rw-r--r--@    1 matthewcrigger  staff   26628 Aug  1 02:55 .DS_Store
+drwxr-xr-x@    9 matthewcrigger  staff     288 Aug  1 03:40 .cargo
+-rwxr-xr-x     1 matthewcrigger  staff    1024 Jul 31 01:54 build.sh
+lrwxr-xr-x     1 matthewcrigger  staff       7 Nov 12  2024 latest -> v24.9.0`
+
+  it('parses a long listing into rows', () => {
+    const result = detectStructured('ls -la', LS, 0)
+    if (result?.kind !== 'list') throw new Error('expected list')
+
+    // `.` and `..` are dropped: the pane header already says where we are.
+    expect(result.entries.map((e) => e.name)).toEqual([
+      '.DS_Store',
+      '.cargo',
+      'build.sh',
+      'latest',
+    ])
+    expect(result.total).toBe('1752')
+  })
+
+  it('classifies entries by mode', () => {
+    const result = detectStructured('ls -la', LS, 0)
+    if (result?.kind !== 'list') throw new Error('expected list')
+    const kinds = Object.fromEntries(result.entries.map((e) => [e.name, e.kind]))
+    expect(kinds).toEqual({
+      '.DS_Store': 'file',
+      '.cargo': 'dir',
+      'build.sh': 'exec',
+      latest: 'link',
+    })
+  })
+
+  it('resolves symlink targets', () => {
+    const result = detectStructured('ls -la', LS, 0)
+    if (result?.kind !== 'list') throw new Error('expected list')
+    expect(result.entries.find((e) => e.name === 'latest')?.target).toBe('v24.9.0')
+  })
+
+  it('keeps filenames containing spaces intact', () => {
+    // Splitting on whitespace would truncate this to "AdGuard".
+    const withSpaces = `total 8
+drwxr-xr-x@  3 root  wheel   96 Jun 13 01:50 AdGuard for Safari.app
+drwxr-xr-x@  3 root  wheel   96 Jun 13 01:50 AdBlock.app`
+    const result = detectStructured('ls -la /Applications', withSpaces, 0)
+    if (result?.kind !== 'list') throw new Error('expected list')
+    expect(result.entries[0]?.name).toBe('AdGuard for Safari.app')
+  })
+
+  it('marks dotfiles as hidden', () => {
+    const result = detectStructured('ls -la', LS, 0)
+    if (result?.kind !== 'list') throw new Error('expected list')
+    expect(result.entries.find((e) => e.name === '.cargo')?.hidden).toBe(true)
+    expect(result.entries.find((e) => e.name === 'build.sh')?.hidden).toBe(false)
+  })
+
+  it('formats sizes and leaves directories unsized', () => {
+    const result = detectStructured('ls -la', LS, 0)
+    if (result?.kind !== 'list') throw new Error('expected list')
+    expect(result.entries.find((e) => e.name === '.DS_Store')?.size).toBe('26 kB')
+    expect(result.entries.find((e) => e.name === '.cargo')?.size).toBe('—')
+  })
+
+  it('declines short format, which has no columns to parse', () => {
+    expect(detectStructured('ls', 'file-a\nfile-b\nfile-c\n', 0)).toBeNull()
+  })
+
+  it('declines when the command is piped', () => {
+    // The output is whatever the pipe produced, not a listing.
+    expect(detectStructured('ls -la | grep cargo', LS, 0)).toBeNull()
+  })
+
+  it('does not fire on a failed listing', () => {
+    expect(detectStructured('ls -la /nope', 'ls: /nope: No such file or directory', 1)).toBeNull()
+  })
+
+  it('declines a listing with too few rows to be a table', () => {
+    const single = 'total 0\n-rw-r--r--  1 u  g  0 Jan  1 00:00 only.txt'
+    expect(detectStructured('ls -la', single, 0)).toBeNull()
+  })
+
+  it('handles the older date format on archival files', () => {
+    const old = `total 16
+-rw-r--r--  1 u  g   7 Nov 12  2024 archive.txt
+-rw-r--r--  1 u  g  42 Aug  1 04:18 recent.txt`
+    const result = detectStructured('ls -la', old, 0)
+    if (result?.kind !== 'list') throw new Error('expected list')
+    expect(result.entries.map((e) => e.modified)).toEqual(['Nov 12 2024', 'Aug 1 04:18'])
+  })
+})
+
 describe('renderer toggles', () => {
   it('respects the Behavior opt-out', () => {
     setRendererEnabled({ git: false })

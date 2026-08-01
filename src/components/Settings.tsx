@@ -4,6 +4,7 @@
  */
 
 import { IDENTITIES, useStore, type Density, type GhostSource, type Profile, type SettingsTab } from '../state/store'
+import type { RendererId } from '../term/renderers'
 import { Toggle } from './Appearance'
 
 const TABS: { id: SettingsTab; label: string }[] = [
@@ -394,11 +395,12 @@ function lineHeight(density: Density): string {
 
 /* --- Behavior -------------------------------------------------------------- */
 
-const RENDERER_ROWS: { id: 'build' | 'git' | 'serve' | 'err'; label: string }[] = [
+const RENDERER_ROWS: { id: RendererId; label: string }[] = [
   { id: 'build', label: 'Build output → route table' },
   { id: 'git', label: 'git status → file chips' },
   { id: 'serve', label: 'Dev servers → link card' },
   { id: 'err', label: 'Errors → did-you-mean' },
+  { id: 'list', label: 'Directory listings → table' },
 ]
 
 const GHOST_SOURCES: { id: GhostSource; label: string }[] = [

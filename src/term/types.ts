@@ -50,6 +50,22 @@ export type Structured =
   | { kind: 'git'; groups: GitGroup[]; branch?: string; ahead?: string }
   | { kind: 'serve'; links: ServeLink[]; title: string; hints: ServeHint[] }
   | { kind: 'err'; message: string; detail?: string; suggestion?: string }
+  | { kind: 'list'; entries: ListEntry[]; total?: string }
+
+export interface ListEntry {
+  name: string
+  /** Rendered as the row marker, mirroring the build table's ○ / ƒ. */
+  kind: 'dir' | 'file' | 'link' | 'exec'
+  /** Human-readable size; directories show their entry count instead. */
+  size: string
+  modified: string
+  perms: string
+  owner: string
+  /** Symlink target, when the entry is a link. */
+  target?: string
+  /** Dotfiles are dimmed so the listing reads at a glance. */
+  hidden: boolean
+}
 
 export interface BuildRoute {
   path: string

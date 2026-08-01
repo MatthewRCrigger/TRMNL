@@ -299,6 +299,10 @@
   border-top: 1px solid var(--bd2);
   font-family: var(--mono);
   font-size: var(--t-micro);
+  /* Same reasoning as the expanded footer: tabular figures keep the collapsed
+     readout from twitching as values change width. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
 
 .rail__footcpu { color: var(--ac); }
@@ -322,22 +326,93 @@
 
 .spark__bar { flex: 1; min-height: 1px; }
 
-.rail__meters {
+/* Telemetry grid.
+ *
+ * Numbers here update twice a second, so the layout is built to not move: fixed
+ * column widths, right-aligned values, and tabular numerals so every digit is
+ * the same width. `9%` and `27%` occupy identical space. */
+.rail__stats {
   display: flex;
-  justify-content: space-between;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  margin-bottom: 4px;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 7px;
 }
 
-.rail__mlabel { color: var(--fgdd); letter-spacing: 0.1em; }
-.rail__mval { color: var(--ac); }
-
-.rail__net {
+/* Two rows per metric: label + value on top, bar beneath. The rail is only
+ * 208px wide, and a single row could not hold a label, a usable bar and a value
+ * like `305.9/460.4G` without one of them collapsing. */
+.rail__stat {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-areas:
+    'label value'
+    'bar   bar';
+  align-items: center;
+  gap: 2px 6px;
   font-family: var(--mono);
   font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.rail__slabel {
+  grid-area: label;
+  color: var(--fgdd);
+  letter-spacing: 0.1em;
+}
+
+.rail__sbar {
+  grid-area: bar;
+  position: relative;
+  height: 2px;
+  background: var(--wash);
+  overflow: hidden;
+}
+
+.rail__sfill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  transition: width 0.3s linear, background 0.2s;
+}
+
+.rail__sval {
+  grid-area: value;
+  text-align: right;
+  color: var(--ac);
+  white-space: nowrap;
+}
+
+/* Network row: arrows and clock are fixed, values right-aligned in fixed cells. */
+.rail__net {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
   color: var(--fgdd);
 }
+
+/* Fixed width so a rate going from `8K` to `1.2M` cannot shift the clock. */
+.rail__netpair {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  flex: none;
+}
+
+.rail__netarrow { color: var(--fgdd); flex: none; }
+
+.rail__netval {
+  width: 38px;
+  text-align: right;
+  color: var(--fgd);
+}
+
+.rail__clock { color: var(--fgdd); white-space: nowrap; }
 
 .rail__toggle {
   flex: none;
@@ -715,6 +790,58 @@
 .sx-table__head .sx-table__load { color: var(--fgdd); }
 
 .sx-table__marker { color: var(--acd); margin-right: 8px; }
+
+/* --- list renderer -------------------------------------------------------- */
+
+.sx-list__owner {
+  width: 96px;
+  flex: none;
+  color: var(--fgdd);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sx-list__mod {
+  width: 104px;
+  text-align: right;
+  flex: none;
+  color: var(--fgdd);
+  white-space: nowrap;
+}
+
+.sx-table__head .sx-list__owner,
+.sx-table__head .sx-list__mod { color: var(--fgdd); }
+
+.sx-list__name { color: var(--fg); }
+
+/* Directories are the actionable rows — clicking one cd's into it. */
+.sx-list__link {
+  font-family: var(--mono);
+  font-size: inherit;
+  color: var(--ac);
+  text-align: left;
+  transition: text-decoration-color 0.16s;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+
+.sx-list__link:hover { text-decoration-color: var(--ac); }
+
+.sx-list__target {
+  margin-left: 8px;
+  color: var(--fgdd);
+}
+
+/* Dotfiles recede so the meaningful entries read first. */
+.sx-table__row[data-hidden='true'] .sx-list__name,
+.sx-table__row[data-hidden='true'] .sx-list__link { color: var(--fgd); }
+.sx-table__row[data-hidden='true'] { opacity: 0.62; }
+
+.sx-table__marker[data-kind='dir'] { color: var(--ac); }
+.sx-table__marker[data-kind='exec'] { color: var(--warn); }
+.sx-table__marker[data-kind='link'] { color: var(--fgd); }
 
 .sx-git__group { margin-bottom: 9px; }
 .sx-git__label { margin-bottom: 5px; }

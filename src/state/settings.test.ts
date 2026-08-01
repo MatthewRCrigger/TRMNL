@@ -67,7 +67,13 @@ describe('pickSettings', () => {
 
   it('merges renderer toggles over the defaults', () => {
     const s = pickSettings({ renderers: { git: false } } as never)
-    expect(s.renderers).toEqual({ build: true, git: false, serve: true, err: true })
+    expect(s.renderers).toEqual({
+      build: true,
+      git: false,
+      serve: true,
+      err: true,
+      list: true,
+    })
   })
 
   it('ignores a non-boolean restoreOnLaunch', () => {

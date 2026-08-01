@@ -13,6 +13,9 @@ interface Telemetry {
   netDown: number
   netUp: number
   cores: number[]
+  load: number[]
+  diskUsed: number
+  diskTotal: number
 }
 
 const SPARK_BARS = 30
@@ -33,6 +36,7 @@ export function Rail() {
   const remote = ids.filter((id) => sessions[id]?.host !== 'local')
 
   const telemetry = useTelemetry()
+  const clock = useClock()
 
   if (!railOpen) {
     return (
@@ -71,7 +75,7 @@ export function Rail() {
         <div className="rail__footc">
           <span className="rail__footcpu">{Math.round(telemetry?.cpu ?? 0)}%</span>
           <span className="rail__footmem">
-            {telemetry ? `${gb(telemetry.memUsed)}/${gb(telemetry.memTotal)}G` : '—'}
+            {telemetry ? `${formatGb(telemetry.memUsed)}/${formatGb(telemetry.memTotal)}G` : '—'}
           </span>
         </div>
 
@@ -110,23 +114,48 @@ export function Rail() {
         </button>
       </div>
 
+      {/* Every value sits in a fixed grid cell and is right-aligned with tabular
+          numerals, so nothing reflows as numbers change width — `9%` and `27%`
+          occupy the same space. Values are padded to their widest form rather
+          than sized to their current content. */}
       <div className="rail__foot">
         <Sparkline values={telemetry?.cores ?? []} />
-        <div className="rail__meters">
-          <span>
-            <span className="rail__mlabel">CPU</span>{' '}
-            <span className="rail__mval">{Math.round(telemetry?.cpu ?? 0)}%</span>
-          </span>
-          <span>
-            <span className="rail__mlabel">MEM</span>{' '}
-            <span className="rail__mval">
-              {telemetry ? `${gb(telemetry.memUsed)}/${gb(telemetry.memTotal)}G` : '—'}
-            </span>
-          </span>
+
+        <div className="rail__stats">
+          <Stat label="CPU" value={formatPct(telemetry?.cpu)} bar={telemetry?.cpu} />
+          <Stat
+            label="MEM"
+            value={telemetry ? `${formatGb(telemetry.memUsed)}/${formatGb(telemetry.memTotal)}G` : '—'}
+            bar={telemetry?.memPercent}
+          />
+          <Stat label="LOAD" value={formatLoad(telemetry?.load)} />
+          {/* Free space is the actionable number; the full used/total pair is
+              too wide for a 208px rail and reads worse at 10px. */}
+          <Stat
+            label="DISK"
+            value={
+              telemetry && telemetry.diskTotal > 0
+                ? `${formatGb(telemetry.diskTotal - telemetry.diskUsed)}G free`
+                : '—'
+            }
+            bar={
+              telemetry && telemetry.diskTotal > 0
+                ? (telemetry.diskUsed / telemetry.diskTotal) * 100
+                : undefined
+            }
+          />
         </div>
+
         <div className="rail__net">
-          ↓{rate(telemetry?.netDown ?? 0)} ↑{rate(telemetry?.netUp ?? 0)} ·{' '}
-          {new Date().toTimeString().slice(0, 8)}
+          <span className="rail__netpair">
+            <span className="rail__netarrow">↓</span>
+            <span className="rail__netval">{formatRate(telemetry?.netDown ?? 0)}</span>
+          </span>
+          <span className="rail__netpair">
+            <span className="rail__netarrow">↑</span>
+            <span className="rail__netval">{formatRate(telemetry?.netUp ?? 0)}</span>
+          </span>
+          <span className="rail__clock">{clock}</span>
         </div>
       </div>
 
@@ -167,6 +196,35 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
         )}
       </span>
     </button>
+  )
+}
+
+/**
+ * One metric: label and right-aligned value on a row, utilisation bar beneath.
+ *
+ * The label column is a fixed width and the value is right-aligned against the
+ * rail's inner edge, so a value growing from `9%` to `100%` never moves the
+ * label — and the bar spans the full width regardless of either.
+ */
+function Stat({ label, value, bar }: { label: string; value: string; bar?: number }) {
+  return (
+    <div className="rail__stat">
+      <span className="rail__slabel">{label}</span>
+      <span className="rail__sbar" aria-hidden>
+        {bar !== undefined && (
+          <span
+            className="rail__sfill"
+            style={{
+              width: `${Math.min(100, Math.max(0, bar))}%`,
+              // Utilisation reads as caution past 80%, which is the point at
+              // which it is worth noticing.
+              background: bar >= 80 ? 'var(--warn)' : 'var(--ac)',
+            }}
+          />
+        )}
+      </span>
+      <span className="rail__sval">{value}</span>
+    </div>
   )
 }
 
@@ -221,12 +279,45 @@ function useTelemetry(): Telemetry | null {
   return telemetry
 }
 
-function gb(bytes: number): string {
+/** Ticks once a second, independent of the slower telemetry poll. */
+function useClock(): string {
+  const [now, setNow] = useState(() => new Date().toTimeString().slice(0, 8))
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setNow(new Date().toTimeString().slice(0, 8)),
+      1000,
+    )
+    return () => clearInterval(timer)
+  }, [])
+
+  return now
+}
+
+export function formatGb(bytes: number): string {
   return (bytes / 1024 ** 3).toFixed(1)
 }
 
-function rate(bytesPerSec: number): string {
-  if (bytesPerSec >= 1024 ** 2) return `${(bytesPerSec / 1024 ** 2).toFixed(1)}MB/s`
-  if (bytesPerSec >= 1024) return `${Math.round(bytesPerSec / 1024)}KB/s`
-  return `${Math.round(bytesPerSec)}B/s`
+export function formatPct(value?: number): string {
+  if (value === undefined) return '—'
+  return `${Math.round(value)}%`
+}
+
+/** 1-minute load average, the figure that actually indicates pressure. */
+export function formatLoad(values?: number[]): string {
+  const one = values?.[0]
+  return one === undefined ? '—' : one.toFixed(2)
+}
+
+/**
+ * Transfer rate at a constant width.
+ *
+ * Always two significant-ish digits and a fixed unit width, so the string does
+ * not jump between `9B/s` and `1.2MB/s` and drag the clock around with it.
+ */
+export function formatRate(bytesPerSec: number): string {
+  if (bytesPerSec >= 1024 ** 3) return `${(bytesPerSec / 1024 ** 3).toFixed(1)}G`
+  if (bytesPerSec >= 1024 ** 2) return `${(bytesPerSec / 1024 ** 2).toFixed(1)}M`
+  if (bytesPerSec >= 1024) return `${Math.round(bytesPerSec / 1024)}K`
+  return `${Math.round(bytesPerSec)}B`
 }

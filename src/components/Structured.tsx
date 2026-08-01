@@ -22,6 +22,8 @@ export function Structured({ data, onRun }: Props) {
       return <ServeCard data={data} />
     case 'err':
       return <ErrorPanel data={data} onRun={onRun} />
+    case 'list':
+      return <ListTable data={data} onRun={onRun} />
   }
 }
 
@@ -60,6 +62,76 @@ function BuildTable({ data }: { data: Extract<StructuredData, { kind: 'build' }>
       </div>
     </div>
   )
+}
+
+/** Directory listing, on the same hairline grid as the build route table. */
+function ListTable({
+  data,
+  onRun,
+}: {
+  data: Extract<StructuredData, { kind: 'list' }>
+  onRun: (cmd: string) => void
+}) {
+  const dirs = data.entries.filter((e) => e.kind === 'dir').length
+  const files = data.entries.length - dirs
+
+  return (
+    <div className="sx">
+      <div className="sx-table">
+        <div className="sx-table__head">
+          <span className="sx-table__route micro">NAME</span>
+          <span className="sx-list__owner micro">OWNER</span>
+          <span className="sx-table__size micro">SIZE</span>
+          <span className="sx-list__mod micro">MODIFIED</span>
+        </div>
+
+        {data.entries.map((entry) => (
+          <div className="sx-table__row" data-hidden={entry.hidden} key={entry.name}>
+            <span className="sx-table__route">
+              <span className="sx-table__marker" data-kind={entry.kind}>
+                {MARKERS[entry.kind]}
+              </span>
+              {/* Directories are clickable: the obvious next action on a listing
+                  is to go into one. */}
+              {entry.kind === 'dir' ? (
+                <button
+                  className="sx-list__link"
+                  onClick={() => onRun(`cd ${quote(entry.name)}`)}
+                  title={`cd ${entry.name}`}
+                  type="button"
+                >
+                  {entry.name}
+                </button>
+              ) : (
+                <span className="sx-list__name">{entry.name}</span>
+              )}
+              {entry.target && <span className="sx-list__target">→ {entry.target}</span>}
+            </span>
+            <span className="sx-list__owner">{entry.owner}</span>
+            <span className="sx-table__size">{entry.size}</span>
+            <span className="sx-list__mod">{entry.modified}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="sx__foot">
+        {dirs} {dirs === 1 ? 'directory' : 'directories'} · {files}{' '}
+        {files === 1 ? 'file' : 'files'} · ▸ dir · ○ file · ↗ link · ▪ exec
+      </div>
+    </div>
+  )
+}
+
+const MARKERS: Record<string, string> = {
+  dir: '▸',
+  file: '○',
+  link: '↗',
+  exec: '▪',
+}
+
+/** Shell-quote a name only when it needs it. */
+function quote(name: string): string {
+  return /[\s'"$`\\!*?()[\]{}|;&<>]/.test(name) ? `'${name.replace(/'/g, `'\\''`)}'` : name
 }
 
 function GitStatus({
