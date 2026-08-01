@@ -210,12 +210,42 @@
 
 .rail__row[data-active='true'] .rail__name { color: var(--fg); }
 
-.rail__badge {
+.rail__row { cursor: default; }
+
+/* Badge and close button occupy the same cell, so revealing the close control on
+ * hover cannot shift the row. */
+.rail__trail {
+  position: relative;
   flex: none;
+  display: grid;
+  min-width: 22px;
+  justify-items: end;
+}
+
+.rail__badge {
+  grid-area: 1 / 1;
   font-family: var(--mono);
   font-size: var(--t-micro);
   color: var(--fgdd);
+  transition: opacity 0.16s;
 }
+
+.rail__close {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  font-size: 9px;
+  color: var(--fgdd);
+  opacity: 0;
+  transition: opacity 0.16s, color 0.16s, border-color 0.16s;
+  border: 1px solid transparent;
+}
+
+.rail__row:hover .rail__badge { opacity: 0; }
+.rail__row:hover .rail__close { opacity: 1; }
+.rail__close:hover { color: var(--err); border-color: var(--err); }
 
 .rail__count { color: var(--ac); }
 
@@ -633,17 +663,49 @@
 
 /* --- Block ---------------------------------------------------------------- */
 
+/* One command execution as a complete container.
+ *
+ * The ship-target design reduced this to a bare `border-left` spine; the box is a
+ * deliberate return to the earlier `1b` exploration, which read better because
+ * the container makes it unambiguous where one command ends and the next begins.
+ *
+ * The 17px gap and 13px content indent are preserved — the handoff calls them
+ * load-bearing for reading rhythm, so the box sits inside that spacing rather
+ * than replacing it. The left edge stays 2px and carries the state colour, so
+ * exit status is still readable at a glance down the stream. */
 .block {
   margin-bottom: 17px;
-  padding-left: 13px;
+  border: 1px solid var(--bd2);
   border-left: 2px solid var(--ac);
+  background: color-mix(in oklch, var(--ac) 1.5%, transparent);
+  transition: border-color 0.16s, background 0.16s;
 }
 
+/* Hovering lifts the block slightly, which also cues that its actions are live. */
+.block:hover {
+  border-color: color-mix(in oklch, var(--ac) 20%, transparent);
+  background: var(--wash2);
+}
+
+/* The header is its own band, divided from the output. This is the part of `1b`
+ * that did real work: the command and its result are different kinds of
+ * information and benefit from being visually separated. */
 .block__head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-bottom: 5px;
+  padding: 7px 13px;
+  border-bottom: 1px solid var(--bd2);
+}
+
+.block[data-empty='true'] .block__head { border-bottom: none; }
+
+/* Output and structured renderers share the body padding. The top value is
+ * smaller because `--lh` already adds leading above the first line; matching the
+ * bottom would leave the body looking top-heavy. */
+.block__out,
+.block > .sx {
+  padding: 5px 13px 8px;
 }
 
 .block__prompt {
@@ -742,8 +804,15 @@
   -webkit-user-select: text;
 }
 
+/* Part of the container: its own divided band under the output rather than a
+ * button floating loose beneath it. */
 .block__fold {
-  margin-top: 5px;
+  display: block;
+  width: 100%;
+  padding: 6px 13px;
+  text-align: left;
+  border-top: 1px solid var(--bd2);
+  background: color-mix(in oklch, var(--ac) 2%, transparent);
   font-family: var(--mono);
   font-weight: 500;
   font-size: var(--t-label);
@@ -1112,9 +1181,13 @@
 
 /* --- Welcome state -------------------------------------------------------- */
 
+/* Boxed like a block, so the fresh-session state sits on the same grid as the
+ * stream it will become. */
 .welcome {
-  padding-left: 13px;
-  border-left: 2px solid var(--bd2);
+  padding: 16px 18px 18px;
+  border: 1px solid var(--bd2);
+  border-left: 2px solid var(--bd);
+  background: color-mix(in oklch, var(--ac) 1.5%, transparent);
 }
 
 .welcome__mark {
@@ -1916,3 +1989,143 @@
 }
 
 .keys__note { margin-top: 20px; letter-spacing: 0.12em; }
+
+/* --- Scrollback search (⌘⇧F) ---------------------------------------------- */
+
+/* Anchored top-right of the window so it never covers the composer, which is
+ * where the user's attention returns after a search. */
+.search {
+  position: absolute;
+  top: 52px;
+  right: 16px;
+  z-index: 95;
+  width: 420px;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in oklch, var(--card) 96%, transparent);
+  border: 1px solid var(--bd);
+  box-shadow: 0 20px 50px -14px #000;
+  backdrop-filter: blur(10px);
+}
+
+.search__bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--bd2);
+}
+
+.search__input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.search__input::placeholder { color: var(--fgdd); }
+
+/* Fixed width so stepping from 9/40 to 10/40 cannot shift the buttons. */
+.search__count {
+  min-width: 46px;
+  text-align: right;
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--ac);
+}
+
+.search__step,
+.search__close {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 1px solid var(--bd2);
+  font-size: 10px;
+  color: var(--fgdd);
+  transition: color 0.16s, border-color 0.16s;
+}
+
+.search__step:hover:not(:disabled),
+.search__close:hover { color: var(--ac); border-color: var(--ac); }
+.search__step:disabled { opacity: 0.35; }
+
+.search__results { max-height: 260px; overflow-y: auto; }
+
+.search__hit {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 11px;
+  border-left: 2px solid transparent;
+  text-align: left;
+  transition: background 0.16s;
+}
+
+.search__hit[data-active='true'] { border-left-color: var(--ac); background: var(--wash); }
+.search__hit:hover { background: var(--wash2); }
+
+.search__hitcmd {
+  flex: none;
+  max-width: 34%;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--fgdd);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search__hitline {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fgd);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search__mark {
+  background: color-mix(in oklch, var(--ac) 26%, transparent);
+  color: var(--fg);
+}
+
+.search__hitsrc { flex: none; color: var(--fgdd); }
+
+.search__empty {
+  padding: 14px 11px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--fgdd);
+}
+
+.search__foot {
+  display: flex;
+  gap: 14px;
+  padding: 8px 11px;
+  border-top: 1px solid var(--bd2);
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: var(--t-label);
+  letter-spacing: 0.12em;
+  color: var(--fgdd);
+}
+
+/* --- Block jump / search target ------------------------------------------- */
+
+/* A brief wash marks where ⌘[ / ⌘] landed, or which block a search hit is in —
+ * without it, a jump between two similar blocks is imperceptible. */
+.block[data-jumped='true'],
+.block[data-search-hit='true'] {
+  background: var(--wash2);
+}
+
+.block[data-jumped='true'] { transition: background 0.6s; }

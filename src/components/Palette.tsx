@@ -43,6 +43,7 @@ export function Palette() {
   const newSession = useStore((s) => s.newSession)
   const toggleSplit = useStore((s) => s.toggleSplit)
   const closePane = useStore((s) => s.closePane)
+  const closeSession = useStore((s) => s.closeSession)
   const runCommand = useStore((s) => s.runCommand)
   const clearBuffer = useStore((s) => s.clearBuffer)
   const toggleAppearance = useStore((s) => s.toggleAppearance)
@@ -130,7 +131,11 @@ export function Palette() {
           toggleSplit(item.action.dir)
           break
         case 'close-pane':
-          closePane()
+          if (useStore.getState().split) {
+            closePane()
+          } else if (sessionId) {
+            void closeSession(sessionId)
+          }
           break
         case 'run':
           void runCommand(item.action.cmd)

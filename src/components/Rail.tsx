@@ -170,32 +170,61 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
   const session = useStore((s) => s.sessions[id])
   const focus = useStore((s) => s.focus)
   const activateSession = useStore((s) => s.activateSession)
+  const closeSession = useStore((s) => s.closeSession)
 
   if (!session) return null
   const count = session.blocks.length
 
   return (
-    <button
+    // A row is a div rather than a button so the close control can nest inside it
+    // without an invalid button-in-button.
+    <div
       className="rail__row"
       data-active={active}
       onClick={() => activateSession(focus, index)}
-      type="button"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          activateSession(focus, index)
+        }
+      }}
+      role="tab"
+      aria-selected={active}
+      tabIndex={0}
     >
       <span
         className="dot"
         style={{ color: session.host === 'local' ? 'var(--ac)' : 'var(--warn)' }}
       />
       <span className="rail__name">{session.name}</span>
-      <span className="rail__badge">
-        {count > 0 ? (
-          <>
-            <span className="rail__count">{count}</span>↵
-          </>
-        ) : (
-          '—'
-        )}
+
+      {/* The badge and the close control share one cell so swapping between them
+          on hover cannot change the row's width. */}
+      <span className="rail__trail">
+        <span className="rail__badge">
+          {count > 0 ? (
+            <>
+              <span className="rail__count">{count}</span>↵
+            </>
+          ) : (
+            '—'
+          )}
+        </span>
+        <button
+          className="rail__close"
+          onClick={(e) => {
+            // Otherwise the row's own click would re-activate what we just closed.
+            e.stopPropagation()
+            void closeSession(id)
+          }}
+          title={`Close ${session.name}`}
+          aria-label={`Close ${session.name}`}
+          type="button"
+        >
+          ✕
+        </button>
       </span>
-    </button>
+    </div>
   )
 }
 

@@ -6,14 +6,81 @@ bundle; ship target is that document's **turn 3 / option 3a**.
 This is a real terminal — real PTYs, real shells, real ANSI — not a themed
 viewer. The block model sits above the emulator rather than replacing it.
 
-## Stack
+---
 
-| Layer | Choice | Why |
+## What it's built on, and why
+
+| Layer | Choice | Why this one |
 |---|---|---|
-| Shell | **Tauri 2** | Per the handoff's recommendation: small footprint, no Chromium dependency. |
-| UI | React 19 + Zustand | One window = one store; panes are children. |
-| PTY | `portable-pty` (Rust) | Spawns real shells; one reader thread per session. |
-| Block boundaries | **OSC 133** shell integration | The only reliable approach — see below. |
+| App shell | **Tauri 2** | 4.3 MB binary vs ~150 MB for Electron. Uses the system WebView, so nothing bundles Chromium. |
+| Native half | **Rust** | Owns the PTYs, shell integration, telemetry and config — the parts that need real OS access. |
+| PTY | **`portable-pty`** | Battle-tested (it is WezTerm's own PTY layer). One reader thread per session. |
+| UI | **React 19** | The block stream is a list of derived views over changing state — the thing React is actually good at. |
+| State | **Zustand** | One window = one store, panes are children. No context plumbing, no reducer ceremony. |
+| Interactive programs | **xterm.js** | A real terminal grid for when a program takes over the screen. Not used for ordinary output. |
+| Block boundaries | **OSC 133** | Shell-reported, not guessed. See [The block model](#the-block-model). |
+
+### Why not SwiftUI / fully native?
+
+This was the real fork in the road, and the honest answer is that **the product is
+90% text layout and 10% OS integration** — which inverts what native AppKit or
+SwiftUI is good at.
+
+Concretely:
+
+- **The design is a CSS design.** The handoff's token system derives every
+  neutral from one accent via `color-mix(in oklch, …)`, which is what makes the
+  identity switcher recolour the entire interface by changing a single variable.
+  Reproducing that in SwiftUI means hand-writing a colour-derivation layer and
+  re-resolving it through every view. In CSS it is the platform doing the work.
+- **Text layout is the whole product.** Proportional-width tables, hairline
+  rules, tabular numerals, ellipsised paths, wrap behaviour on 10k-line
+  scrollback — this is the browser's core competency and decades of its
+  optimisation. `AttributedString` and `Text` are workable but you rebuild a lot.
+- **`xterm.js` has no native peer.** The one genuinely hard problem here is
+  emulating a terminal, and the mature implementations are either JS (`xterm.js`)
+  or Rust/C++ libraries that would still need a renderer written around them.
+  SwiftTerm exists but is a much smaller bet.
+- **The 10% that is OS work is already native.** PTYs, `SIGWINCH`, `$PATH`
+  resolution, load average, Keychain (pending) and notifications all live in the
+  Rust half. The WebView is a rendering target, not the architecture.
+
+What this trades away is real, and worth stating: **~40 ms of extra cold-start**,
+no AppKit-native text selection semantics, and a WebView process per window. For
+a terminal — long-lived, opened once, kept open — that is the right side of the
+trade. For a menu-bar utility it would not be.
+
+Electron would have worked too and the ecosystem is deeper, but it buys ~145 MB
+and a second browser engine for capabilities this app never uses.
+
+### How it fits together
+
+```
+┌─ Rust ──────────────────────────────────────────────────────────┐
+│  pty.rs               spawns shells, one reader thread each     │
+│  shell_integration.rs writes the OSC 133 hooks, injects them    │
+│  detect.rs            inspects cwd for the welcome state        │
+│  telemetry.rs         real CPU / mem / load / disk / network     │
+│  config.rs            atomic writes to ~/.config/trmnl          │
+└────────────────────────┬────────────────────────────────────────┘
+                         │  events: pty://data, pty://exit
+                         │  commands: pty_spawn, pty_write, …
+┌────────────────────────▼────────────────────────────────────────┐
+│  term/session.ts      one PTY ⇄ one stream of blocks            │
+│    ├ osc133.ts        parses boundaries out of the byte stream   │
+│    ├ renderers.ts     build / git / serve / err / list parsers   │
+│    ├ completion.ts    delegates TAB to the real shell            │
+│    └ altscreen.ts     detects programs that take over the screen │
+│  state/store.ts       window state; panes and sessions           │
+│  components/          the design, as described in the handoff    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The seam is deliberately narrow: Rust emits bytes and never interprets them;
+the frontend interprets bytes and never touches the OS. Everything that could
+be wrong about a terminal — boundary detection, ANSI handling, renderer parsing —
+is therefore testable without a PTY, which is why the test suite can be fast and
+still meaningful.
 
 ## Running it
 
@@ -150,21 +217,57 @@ reflects whatever path the backend reports.
 - **Palette ranking is real fuzzy subsequence matching** with word-boundary and
   frequency weighting, and path segments are individually matchable, so `gr/ops`
   finds `~/dev/grid-ops`.
-- **Telemetry is real** (`sysinfo`), not the prototype's simulated jitter.
+- **Telemetry is real** (`sysinfo`), not the prototype's simulated jitter. The
+  footer adds LOAD and DISK beyond the design's CPU/MEM, and every value sits in
+  a fixed grid cell with tabular numerals so a changing number cannot reflow the
+  row.
+- **The newest block never folds.** The design folds any block past the
+  threshold; folding the thing you just ran, while you are reading it, is
+  hostile. It collapses once a newer block supersedes it.
+- **Interactive programs get a terminal overlay.** Nothing in the design covers
+  full-screen TUIs. Programs that take over the screen (`vim`, `htop`, Ink-based
+  CLIs like the Shopify CLI) are detected and handed a real `xterm.js` grid
+  floating above the pane, with the block history visible behind.
+- **TAB completion delegates to the shell** rather than reimplementing `compsys`,
+  so project-specific completers work.
+- **`ls -l` renders as a table** — a fifth renderer, on the same hairline grid as
+  the build route table. Not in the handoff, which specs four; renderers are
+  documented as pluggable and the treatment suits a listing.
+- **Split copy actions** (`COPY OUT` / `COPY CMD`) instead of one button that
+  grabs command and output together.
+- **`⌘[` / `⌘]` step between blocks** — navigation the block model makes possible
+  and the design does not mention.
+- **Completion notifications** for commands that finish while the window is in
+  the background, gated on a 10s threshold so fast commands stay silent.
 
 ## Not built — needs a design pass
 
-The handoff lists these as undesigned, and says not to invent them:
+The handoff lists eight undesigned states and says not to invent them. Five
+remain open:
 
 1. ssh disconnect / host unreachable
-2. Scrollback search (`⌘⇧F` is in the keymap with no UI)
-3. Session close and reorder
-4. Unfocused-window chrome
-5. Text selection semantics (block- vs stream-scoped)
-6. Small-window behavior below ~800px
-7. Keybinding editor — the `EDIT` affordance is deliberately inert rather than a
-   dead control; it needs chord capture and conflict detection
-8. Empty/error states for structured renderers
+2. Unfocused-window chrome
+3. Text selection semantics (block- vs stream-scoped)
+4. Small-window behavior below ~800px
+5. Empty/error states for structured renderers
+
+Three have since been built, because leaving them out meant shipping controls
+that lied about what they did:
+
+- **Scrollback search** (`⌘⇧F`) — the chord was in the keymap and the
+  Keybindings pane with no UI behind it. Built minimally from existing vocabulary
+  rather than inventing a new surface.
+- **Session close** — sessions could be created but never closed, so the rail
+  grew unbounded and each row held a live PTY. That was a resource leak, not just
+  a missing affordance. `✕` on row hover, plus `⌘W` when solo.
+- **Session restore** — "Restore sessions on launch" persisted to disk and was
+  read by nothing. Now restores split geometry, per-pane cwd and history.
+  Scrollback is deliberately *not* persisted: 10k lines per session would make
+  the config file unusable as the dotfile it is meant to be.
+
+The **keybinding editor** is still unbuilt, and its `EDIT` affordance is
+deliberately inert and labelled as such — a visible control that does nothing
+when clicked is worse than one that says it isn't ready.
 
 ## Security note
 

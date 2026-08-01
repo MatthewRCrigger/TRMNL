@@ -6,6 +6,7 @@ import { Appearance } from './components/Appearance'
 import { Pane } from './components/Pane'
 import { Palette } from './components/Palette'
 import { Rail } from './components/Rail'
+import { Search } from './components/Search'
 import { Settings } from './components/Settings'
 import { TitleBar } from './components/TitleBar'
 import { useStore } from './state/store'
@@ -126,6 +127,7 @@ export function App() {
       <Palette />
       <Appearance />
       <Settings />
+      <Search />
 
       {/* Focus-follows-click is handled per pane; this catches the gap between
           them so a click never lands nowhere. */}
@@ -138,7 +140,41 @@ export function App() {
   )
 }
 
-/** Global chords. Esc closes in priority order: settings → appearance → palette. */
+/**
+ * Scroll to the previous/next command block in the focused pane.
+ *
+ * Works off the rendered DOM rather than store indices so it lands on what the
+ * user can actually see — a folded or filtered block is still a real anchor.
+ */
+function jumpBlock(direction: 1 | -1): void {
+  const pane = document.querySelector<HTMLElement>('.pane[data-focused="true"]')
+  const stream = pane?.querySelector<HTMLElement>('.pane__stream')
+  if (!stream) return
+
+  const blocks = Array.from(stream.querySelectorAll<HTMLElement>('.block'))
+  if (blocks.length === 0) return
+
+  // The block nearest the top of the viewport is the current reading position.
+  const top = stream.scrollTop
+  let current = 0
+  for (let i = 0; i < blocks.length; i++) {
+    const el = blocks[i]
+    if (!el) continue
+    if (el.offsetTop - stream.offsetTop <= top + 4) current = i
+  }
+
+  const next = Math.min(blocks.length - 1, Math.max(0, current + direction))
+  const target = blocks[next]
+  if (!target) return
+  stream.scrollTo({ top: target.offsetTop - stream.offsetTop, behavior: 'smooth' })
+
+  // A brief flash marks where you landed; without it a jump between two similar
+  // blocks is hard to perceive.
+  target.setAttribute('data-jumped', 'true')
+  window.setTimeout(() => target.removeAttribute('data-jumped'), 600)
+}
+
+/** Global chords. Esc closes in priority order: settings → appearance → palette → search. */
 function useGlobalKeys(): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -146,6 +182,7 @@ function useGlobalKeys(): void {
       const meta = event.metaKey
 
       if (event.key === 'Escape') {
+        // Priority order: settings → appearance → palette → search.
         if (store.settings.open) {
           store.closeSettings()
           event.preventDefault()
@@ -154,6 +191,9 @@ function useGlobalKeys(): void {
           event.preventDefault()
         } else if (store.palette.open) {
           store.closePalette()
+          event.preventDefault()
+        } else if (store.search.open) {
+          store.closeSearch()
           event.preventDefault()
         }
         return
@@ -177,6 +217,20 @@ function useGlobalKeys(): void {
           if (store.palette.open) store.closePalette()
           else store.openPalette()
           break
+        case 'f':
+          // ⌘⇧F only; plain ⌘F is left to the webview.
+          if (event.shiftKey) {
+            event.preventDefault()
+            if (store.search.open) store.closeSearch()
+            else store.openSearch()
+          }
+          break
+        case '[':
+        case ']':
+          // ⌘[ / ⌘] step between command blocks — the payoff of the block model.
+          event.preventDefault()
+          jumpBlock(event.key === ']' ? 1 : -1)
+          break
         case 'd':
           event.preventDefault()
           store.toggleSplit(event.shiftKey ? 'col' : 'row')
@@ -185,10 +239,18 @@ function useGlobalKeys(): void {
           event.preventDefault()
           void store.newSession()
           break
-        case 'w':
+        case 'w': {
           event.preventDefault()
-          if (store.split) store.closePane()
+          // Split: close the pane. Solo: close the session — otherwise ⌘W would
+          // do nothing at all in the common case.
+          if (store.split) {
+            store.closePane()
+          } else {
+            const id = store.activeSessionId()
+            if (id) void store.closeSession(id)
+          }
           break
+        }
         case ',':
           event.preventDefault()
           if (store.settings.open) store.closeSettings()

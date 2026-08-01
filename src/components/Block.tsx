@@ -41,7 +41,7 @@ export const Block = memo(function Block({
 }: Props) {
   const state = blockState(block)
   const running = state === 'running' || state === 'live'
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'output' | 'command' | null>(null)
 
   // Live elapsed timer, ticking only while the block runs.
   const [now, setNow] = useState(() => Date.now())
@@ -57,12 +57,13 @@ export const Block = memo(function Block({
       ? formatDuration(block.ms)
       : ''
 
-  const copy = async () => {
+  const copy = async (what: 'output' | 'command') => {
     try {
-      const text = [block.cmd, ...block.lines.map((l) => l.text)].join('\n')
+      const text =
+        what === 'command' ? block.cmd : block.lines.map((l) => l.text).join('\n')
       await navigator.clipboard.writeText(text)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1200)
+      setCopied(what)
+      window.setTimeout(() => setCopied(null), 1200)
     } catch {
       // Clipboard can be unavailable; failing silently is better than throwing.
     }
@@ -82,7 +83,14 @@ export const Block = memo(function Block({
   const hiddenCount = block.lines.length - visibleLines.length
 
   return (
-    <div className="block" style={{ borderLeftColor: spineVar(state) }}>
+    <div
+      className="block"
+      data-block-id={block.id}
+      // A command that produced nothing has no body, so the header must not draw
+      // a divider into empty space.
+      data-empty={!block.structured && visibleLines.length === 0}
+      style={{ borderLeftColor: spineVar(state) }}
+    >
       <div className="block__head">
         <span className="block__prompt">❯</span>
         <span className="block__cmd">{block.cmd}</span>
@@ -94,8 +102,23 @@ export const Block = memo(function Block({
           </button>
         ) : (
           <span className="block__actions">
-            <button className="block__action" onClick={copy} type="button">
-              {copied ? 'COPIED' : 'COPY'}
+            {/* Output and command are separate: wanting one without the other is
+                the common case, and a single COPY that grabs both serves neither. */}
+            <button
+              className="block__action"
+              onClick={() => void copy('output')}
+              title="Copy output"
+              type="button"
+            >
+              {copied === 'output' ? 'COPIED' : 'COPY OUT'}
+            </button>
+            <button
+              className="block__action"
+              onClick={() => void copy('command')}
+              title="Copy command"
+              type="button"
+            >
+              {copied === 'command' ? 'COPIED' : 'COPY CMD'}
             </button>
             <button
               className="block__action"

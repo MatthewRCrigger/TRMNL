@@ -9,6 +9,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 
+import { notifyComplete, shouldNotify } from '../lib/notify'
 import { PtySession } from '../term/session'
 import { setKnownCommands, setRendererEnabled, type RendererId } from '../term/renderers'
 import type { Block } from '../term/types'
@@ -106,6 +107,7 @@ interface StoreState {
   palette: { open: boolean; query: string; activeIndex: number }
   appearance: { open: boolean }
   settings: { open: boolean; tab: SettingsTab; selectedProfile: string | null }
+  search: { open: boolean; query: string; activeIndex: number }
 
   /* content */
   panes: Record<PaneId, PaneState>
@@ -129,6 +131,12 @@ interface StoreState {
   movePaletteSelection: (delta: number, max: number) => void
   setPaletteIndex: (i: number) => void
 
+  openSearch: () => void
+  closeSearch: () => void
+  setSearchQuery: (q: string) => void
+  moveSearchSelection: (delta: number, max: number) => void
+  setSearchIndex: (i: number) => void
+
   toggleAppearance: (open?: boolean) => void
   openSettings: (tab?: SettingsTab) => void
   closeSettings: () => void
@@ -143,7 +151,13 @@ interface StoreState {
   deleteProfile: (id: string) => void
   setDefaultProfile: (id: string) => void
 
-  newSession: (profileId?: string, pane?: PaneId) => Promise<void>
+  newSession: (
+    profileId?: string,
+    pane?: PaneId,
+    restore?: { cwd?: string; history?: string[] },
+  ) => Promise<void>
+  /** Kill a session's shell and drop it from its pane. */
+  closeSession: (id: string) => Promise<void>
   activateSession: (pane: PaneId, index: number) => void
   setSessionInput: (id: string, input: string) => void
   submitInput: (id: string) => Promise<void>
@@ -189,6 +203,7 @@ export const useStore = create<StoreState>((set, get) => ({
   palette: { open: false, query: '', activeIndex: 0 },
   appearance: { open: false },
   settings: { open: false, tab: 'profiles', selectedProfile: null },
+  search: { open: false, query: '', activeIndex: 0 },
 
   panes: { a: { sessions: [], active: 0 }, b: { sessions: [], active: 0 } },
   sessions: {},
@@ -207,18 +222,21 @@ export const useStore = create<StoreState>((set, get) => ({
     const raw = await invoke<string | null>('config_load').catch(() => null)
     let settingsValues = DEFAULT_SETTINGS
     let profiles: Profile[] = []
+    let workspace: PersistedWorkspace | undefined
 
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as {
           settings?: Partial<Settings>
           profiles?: Profile[]
+          workspace?: PersistedWorkspace
         }
         // Fields are copied one at a time rather than spread, so keys retired
         // from Settings (glow, scanlines) are dropped instead of being carried
         // back into the file on the next save.
         settingsValues = pickSettings(parsed.settings)
         if (Array.isArray(parsed.profiles)) profiles = parsed.profiles
+        if (parsed.workspace?.panes?.a) workspace = parsed.workspace
       } catch {
         // A corrupt config falls back to defaults rather than blocking launch.
       }
@@ -243,6 +261,38 @@ export const useStore = create<StoreState>((set, get) => ({
     applyTheme(settingsValues)
     set({ host, settingsValues, profiles })
 
+    // Restore the previous workspace when the setting is on and there is one to
+    // restore; otherwise open a single session from the default profile.
+    if (settingsValues.restoreOnLaunch && workspace && workspace.panes.a.sessions.length > 0) {
+      set({
+        split: workspace.split,
+        splitDir: workspace.splitDir,
+        paneSize: workspace.paneSize,
+        railOpen: workspace.railOpen,
+      })
+
+      for (const pane of ['a', 'b'] as PaneId[]) {
+        const saved = workspace.panes[pane]
+        if (pane === 'b' && !workspace.split) continue
+        for (const entry of saved.sessions) {
+          await get().newSession(entry.profileId, pane, {
+            cwd: entry.cwd,
+            history: entry.history,
+          })
+        }
+        set((s) => ({
+          panes: {
+            ...s.panes,
+            [pane]: {
+              ...s.panes[pane],
+              active: Math.min(saved.active, Math.max(0, saved.sessions.length - 1)),
+            },
+          },
+        }))
+      }
+      return
+    }
+
     await get().newSession(profiles.find((p) => p.isDefault)?.id ?? profiles[0]?.id)
   },
 
@@ -261,7 +311,10 @@ export const useStore = create<StoreState>((set, get) => ({
     }
     set({ split: true, splitDir: dir, paneSize: 50 })
     // Focus follows the pane created by a split.
-    void get().newSession(undefined, 'b').then(() => set({ focus: 'b' }))
+    void get().newSession(undefined, 'b').then(() => {
+      set({ focus: 'b' })
+      persist()
+    })
   },
 
   closePane() {
@@ -282,8 +335,14 @@ export const useStore = create<StoreState>((set, get) => ({
     })
   },
 
-  setPaneSize: (pct) => set({ paneSize: Math.min(78, Math.max(22, pct)) }),
-  setRailOpen: (open) => set({ railOpen: open, railAutoCollapsed: false }),
+  setPaneSize: (pct) => {
+    set({ paneSize: Math.min(78, Math.max(22, pct)) })
+    persist()
+  },
+  setRailOpen: (open) => {
+    set({ railOpen: open, railAutoCollapsed: false })
+    persist()
+  },
 
   syncRailForWidth(width) {
     // Collapse automatically below ~1100px; a manual toggle overrides for the
@@ -306,6 +365,18 @@ export const useStore = create<StoreState>((set, get) => ({
       return { palette: { ...s.palette, activeIndex: next } }
     }),
   setPaletteIndex: (i) => set((s) => ({ palette: { ...s.palette, activeIndex: i } })),
+
+  openSearch: () => set({ search: { open: true, query: '', activeIndex: 0 } }),
+  closeSearch: () => set((s) => ({ search: { ...s.search, open: false } })),
+  setSearchQuery: (q) => set((s) => ({ search: { ...s.search, query: q, activeIndex: 0 } })),
+  moveSearchSelection: (delta, max) =>
+    set((s) => {
+      if (max <= 0) return s
+      // Wraps, so stepping past the last match returns to the first.
+      const next = (s.search.activeIndex + delta + max) % max
+      return { search: { ...s.search, activeIndex: next } }
+    }),
+  setSearchIndex: (i) => set((s) => ({ search: { ...s.search, activeIndex: i } })),
 
   toggleAppearance: (open) =>
     set((s) => ({ appearance: { open: open ?? !s.appearance.open } })),
@@ -371,7 +442,7 @@ export const useStore = create<StoreState>((set, get) => ({
     persist()
   },
 
-  async newSession(profileId, pane) {
+  async newSession(profileId, pane, restore) {
     const state = get()
     const targetPane = pane ?? state.focus
     const profile =
@@ -380,7 +451,8 @@ export const useStore = create<StoreState>((set, get) => ({
       state.profiles[0]
 
     const id = nextSessionId()
-    const cwd = profile?.cwd ?? state.host?.home ?? '~'
+    // A restored cwd wins over the profile's, so reopening lands where you left.
+    const cwd = restore?.cwd ?? profile?.cwd ?? state.host?.home ?? '~'
     const isRemote = !!profile && profile.connectVia !== 'local' && profile.connectVia !== ''
 
     const session: Session = {
@@ -393,7 +465,7 @@ export const useStore = create<StoreState>((set, get) => ({
       input: '',
       ghost: '',
       profileId: profile?.id,
-      history: [],
+      history: restore?.history ?? [],
       historyIndex: null,
       takeover: false,
     }
@@ -417,6 +489,22 @@ export const useStore = create<StoreState>((set, get) => ({
           set((s) => {
             const existing = s.sessions[id]
             if (!existing) return s
+
+            // Notify when a slow command settles while the window is in the
+            // background. Comparing against the previous block list means this
+            // fires once, on the transition, not on every output chunk.
+            const last = blocks.at(-1)
+            const previous = existing.blocks.at(-1)
+            if (
+              last &&
+              previous?.id === last.id &&
+              previous.running &&
+              !last.running &&
+              shouldNotify(last, document.hasFocus())
+            ) {
+              void notifyComplete(last, existing.name)
+            }
+
             return { sessions: { ...s.sessions, [id]: { ...existing, blocks } } }
           })
         },
@@ -442,7 +530,7 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       await pty.start({
         shell: profile?.shell,
-        cwd: profile?.cwd,
+        cwd,
         connectVia: profile?.connectVia,
         env: Object.fromEntries((profile?.env ?? []).map((e) => [e.key, e.value])),
         integrationDir: get().host?.integrationDir,
@@ -456,6 +544,8 @@ export const useStore = create<StoreState>((set, get) => ({
       console.error('trmnl: failed to spawn shell', err)
     }
 
+    persist()
+
     // Detection for the welcome state; best-effort.
     invoke<{ branch?: string }>('detect_dir', { path: cwd })
       .then((d) => {
@@ -467,6 +557,47 @@ export const useStore = create<StoreState>((set, get) => ({
         })
       })
       .catch(() => {})
+  },
+
+  async closeSession(id) {
+    // Kill the shell first so the PTY and its reader thread are released even if
+    // the store update below throws.
+    await ptys.get(id)?.dispose()
+    ptys.delete(id)
+
+    set((s) => {
+      const panes = { ...s.panes }
+      for (const paneId of ['a', 'b'] as PaneId[]) {
+        const pane = panes[paneId]
+        const index = pane.sessions.indexOf(id)
+        if (index === -1) continue
+
+        const sessions = pane.sessions.filter((sid) => sid !== id)
+        // Keep the selection on a real session: step back when the last one goes,
+        // otherwise hold position so closing shifts the next one into place.
+        const active = Math.max(0, Math.min(pane.active, sessions.length - 1))
+        panes[paneId] = { sessions, active }
+      }
+
+      const sessions = { ...s.sessions }
+      delete sessions[id]
+      return { panes, sessions }
+    })
+
+    // A pane with no sessions left has nothing to render; give it a fresh one so
+    // the user is never staring at an empty pane with no way forward.
+    const state = get()
+    for (const paneId of ['a', 'b'] as PaneId[]) {
+      const pane = state.panes[paneId]
+      if (pane.sessions.length > 0) continue
+      // Pane B simply closes; pane A always needs a session.
+      if (paneId === 'b' && state.split) {
+        state.closePane()
+      } else if (paneId === 'a') {
+        await state.newSession()
+      }
+    }
+    persist()
   },
 
   activateSession: (pane, index) =>
@@ -683,17 +814,67 @@ function applyTheme(settings: Settings): void {
   root.dataset.density = settings.density
 }
 
+/** The window layout and session list, restored on the next launch. */
+interface PersistedWorkspace {
+  split: boolean
+  splitDir: SplitDir
+  paneSize: number
+  railOpen: boolean
+  panes: Record<PaneId, { active: number; sessions: { profileId?: string; cwd: string; history: string[] }[] }>
+}
+
 /** Debounced write of the persisted slice. Settings save immediately. */
 let saveTimer: number | null = null
 function persist(): void {
   if (saveTimer !== null) clearTimeout(saveTimer)
   saveTimer = window.setTimeout(() => {
     saveTimer = null
-    const { settingsValues, profiles } = useStore.getState()
+    const state = useStore.getState()
+    const { settingsValues, profiles } = state
+
+    // Scrollback is deliberately not persisted: it can run to 10k lines per
+    // session, and writing that on every layout change would make the config
+    // file unusable as the dotfile it is meant to be. cwd and history are what
+    // make a restored session feel continuous.
+    const workspace: PersistedWorkspace | undefined = settingsValues.restoreOnLaunch
+      ? {
+          split: state.split,
+          splitDir: state.splitDir,
+          paneSize: state.paneSize,
+          railOpen: state.railOpen,
+          panes: {
+            a: serialisePane(state, 'a'),
+            b: serialisePane(state, 'b'),
+          },
+        }
+      : undefined
+
     void invoke('config_save', {
-      contents: JSON.stringify({ settings: settingsValues, profiles }, null, 2),
+      contents: JSON.stringify({ settings: settingsValues, profiles, workspace }, null, 2),
     }).catch((err) => console.error('trmnl: could not save config', err))
   }, 180)
+}
+
+function serialisePane(
+  state: StoreState,
+  pane: PaneId,
+): PersistedWorkspace['panes'][PaneId] {
+  const p = state.panes[pane]
+  return {
+    active: p.active,
+    sessions: p.sessions.flatMap((id) => {
+      const session = state.sessions[id]
+      if (!session) return []
+      return [
+        {
+          profileId: session.profileId,
+          cwd: session.cwd,
+          // Cap history so the file stays small on a long-lived session.
+          history: session.history.slice(-100),
+        },
+      ]
+    }),
+  }
 }
 
 /** Ghost suggestion: the remainder of the best history match. */

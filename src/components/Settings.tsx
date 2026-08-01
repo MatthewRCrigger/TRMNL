@@ -500,6 +500,7 @@ const BINDINGS: [string, string][] = [
   ['⌃L', 'Clear buffer'],
   ['⌘⌥←/→', 'Focus pane'],
   ['⌘⇧F', 'Search scrollback'],
+  ['⌘[ / ⌘]', 'Previous / next block'],
 ]
 
 function KeybindingsPane() {
