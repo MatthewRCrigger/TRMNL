@@ -23,6 +23,7 @@ describe('pickSettings', () => {
 
     expect(Object.keys(s).sort()).toEqual([
       'accent',
+      'bootSequence',
       'density',
       'foldThreshold',
       'ghostSource',
@@ -78,6 +79,12 @@ describe('pickSettings', () => {
 
   it('ignores a non-boolean restoreOnLaunch', () => {
     expect(pickSettings({ restoreOnLaunch: 'yes' } as never).restoreOnLaunch).toBe(true)
+  })
+
+  it('defaults the boot sequence on, and rejects a non-boolean', () => {
+    expect(pickSettings(undefined).bootSequence).toBe(true)
+    expect(pickSettings({ bootSequence: false } as never).bootSequence).toBe(false)
+    expect(pickSettings({ bootSequence: 'yes' } as never).bootSequence).toBe(true)
   })
 
   it('ignores a nonsensical scrollback cap', () => {

@@ -92,6 +92,11 @@ export const Block = memo(function Block({
       style={{ borderLeftColor: spineVar(state) }}
     >
       <div className="block__head">
+        {/* Ordinal first: it makes the stream read as an addressable log rather
+            than loose scrollback, and gives ⌘[/⌘] and search hits a referent the
+            user can actually see. Zero-padded to a fixed width so it cannot
+            reflow the row at 99 → 100. */}
+        <span className="block__seq">{String(block.seq).padStart(4, '0')}</span>
         <span className="block__prompt">❯</span>
         <span className="block__cmd">{block.cmd}</span>
         {/* Spacer only. The design used a hairline here to separate the command

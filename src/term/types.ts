@@ -15,6 +15,15 @@ export type BlockState = 'running' | 'live' | 'success' | 'failure' | 'cancelled
 
 export interface Block {
   id: string
+  /**
+   * Per-session ordinal, starting at 1 and displayed zero-padded in the header.
+   *
+   * Distinct from `id`, which is only a DOM key: the sequence restarts per
+   * session so it reads as a position in *this* stream rather than a global
+   * counter, which is what makes it usable as a coordinate when navigating with
+   * `⌘[`/`⌘]` or picking a search hit.
+   */
+  seq: number
   /** The raw command line as typed. */
   cmd: string
   /** cwd at time of execution, for the prompt line. */

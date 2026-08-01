@@ -115,6 +115,11 @@ export function Pane({ pane, showClose }: Props) {
           {prettyPath(session.cwd, host?.home)}
         </span>
         {session.branch && <span className="pane__branch">⑂ {session.branch}</span>}
+        {/* A remote pane names its host: which machine you are typing into is the
+            single most consequential thing to be wrong about. */}
+        {session.host !== 'local' && (
+          <span className="pane__remote">⇄ {session.host}</span>
+        )}
         <span className="rule" />
         <span className="pane__status">{focused ? 'FOCUSED' : 'IDLE'}</span>
         {showClose && (

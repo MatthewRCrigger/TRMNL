@@ -174,6 +174,7 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
 
   if (!session) return null
   const count = session.blocks.length
+  const remote = session.host !== 'local'
 
   return (
     // A row is a div rather than a button so the close control can nest inside it
@@ -188,15 +189,20 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
           activateSession(focus, index)
         }
       }}
+      data-remote={remote}
       role="tab"
       aria-selected={active}
       tabIndex={0}
+      title={remote ? `${session.name} · ${session.host}` : session.name}
     >
       <span
         className="dot"
-        style={{ color: session.host === 'local' ? 'var(--ac)' : 'var(--warn)' }}
+        style={{ color: remote ? 'var(--warn)' : 'var(--ac)' }}
       />
       <span className="rail__name">{session.name}</span>
+      {/* A remote session is a tunnel to somewhere else; the glyph says so at a
+          glance without spending the width a hostname would. */}
+      {remote && <span className="rail__link" aria-label="remote">⇄</span>}
 
       {/* The badge and the close control share one cell so swapping between them
           on hover cannot change the row's width. */}

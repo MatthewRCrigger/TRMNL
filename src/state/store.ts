@@ -74,6 +74,7 @@ export interface Settings {
   renderers: Record<RendererId, boolean>
   ghostSource: GhostSource
   restoreOnLaunch: boolean
+  bootSequence: boolean
   scrollbackCap: number
 }
 
@@ -147,6 +148,12 @@ interface StoreState {
   updateSettings: (
     patch: Partial<Omit<Settings, 'renderers'>> & { renderers?: Partial<Record<RendererId, boolean>> },
   ) => void
+  /** Nonce+colour for the identity sweep; null when no sweep is in flight. */
+  identitySweep: { id: number; color: string } | null
+  /** Commit the pending accent to `--ac`. Called at the sweep's midpoint. */
+  applyIdentity: () => void
+  /** Called by the sweep element once its animation has finished or was cut. */
+  endIdentitySweep: (id: number) => void
   upsertProfile: (profile: Profile) => void
   deleteProfile: (id: string) => void
   setDefaultProfile: (id: string) => void
@@ -183,6 +190,7 @@ const DEFAULT_SETTINGS: Settings = {
   renderers: { build: true, git: true, serve: true, err: true, list: true },
   ghostSource: 'scripts',
   restoreOnLaunch: true,
+  bootSequence: true,
   scrollbackCap: 10_000,
 }
 
@@ -204,6 +212,7 @@ export const useStore = create<StoreState>((set, get) => ({
   appearance: { open: false },
   settings: { open: false, tab: 'profiles', selectedProfile: null },
   search: { open: false, query: '', activeIndex: 0 },
+  identitySweep: null,
 
   panes: { a: { sessions: [], active: 0 }, b: { sessions: [], active: 0 } },
   sessions: {},
@@ -405,9 +414,39 @@ export const useStore = create<StoreState>((set, get) => ({
     if (patch.scrollbackCap) {
       for (const pty of ptys.values()) pty.setScrollbackCap(next.scrollbackCap)
     }
-    applyTheme(next)
+    // Changing identity is the one settings change with a visible ceremony: the
+    // new accent sweeps the window. --ac is held back to the sweep's midpoint so
+    // the trailing half of the band reveals UI that has already repainted; the
+    // sweep element calls applyIdentity when it gets there.
+    const sweeping =
+      patch.accent !== undefined && patch.accent !== current.accent && !prefersReducedMotion()
+
+    if (sweeping) {
+      // Density is not part of the ceremony; only --ac waits for the midpoint.
+      document.documentElement.dataset.density = next.density
+    } else {
+      applyTheme(next)
+    }
+
     set({ settingsValues: next })
     persist()
+
+    if (sweeping) {
+      // The nonce makes a rapid re-switch remount the element rather than queue
+      // behind the one in flight, so five fast switches land on the fifth colour.
+      set({ identitySweep: { id: sweepNonce++, color: next.accent } })
+    }
+  },
+
+  /** Midpoint of the sweep: commit the accent that the band is carrying. */
+  applyIdentity() {
+    applyTheme(get().settingsValues)
+  },
+
+  endIdentitySweep(id) {
+    // Guard on the nonce so a late teardown from a superseded sweep cannot
+    // remove the live one.
+    if (get().identitySweep?.id === id) set({ identitySweep: null })
   },
 
   upsertProfile(profile) {
@@ -800,11 +839,22 @@ export function pickSettings(stored: Partial<Settings> | undefined): Settings {
       typeof stored.restoreOnLaunch === 'boolean'
         ? stored.restoreOnLaunch
         : DEFAULT_SETTINGS.restoreOnLaunch,
+    bootSequence:
+      typeof stored.bootSequence === 'boolean'
+        ? stored.bootSequence
+        : DEFAULT_SETTINGS.bootSequence,
     scrollbackCap:
       typeof stored.scrollbackCap === 'number' && stored.scrollbackCap > 0
         ? stored.scrollbackCap
         : DEFAULT_SETTINGS.scrollbackCap,
   }
+}
+
+/** Monotonic so each sweep is a distinct element, never a reused one. */
+let sweepNonce = 0
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
 /** Apply the token-level theme to :root. */

@@ -239,6 +239,42 @@ reflects whatever path the backend reports.
   and the design does not mention.
 - **Completion notifications** for commands that finish while the window is in
   the background, gated on a 10s threshold so fast commands stay silent.
+- **Blocks carry a per-session ordinal** (`0042`), shown dim in the header and in
+  search results. It makes the stream read as an addressable log and gives
+  `⌘[`/`⌘]` and search hits a visible coordinate.
+- **Remote sessions are structurally marked**, not just dot-coloured: a `⇄` glyph
+  and a caution-hued left edge in the rail, and the hostname in the pane header.
+  Which machine you are typing into is the most consequential thing to be wrong
+  about. The handoff leaves **ssh disconnect undesigned**, so this establishes
+  only the "this is elsewhere" vocabulary and deliberately invents no failure
+  state.
+- **Panels carry a second inset hairline**, implying the plate thickness the
+  film's surfaces have. Replaces what glow used to do, without glow.
+
+### The animation budget — a deliberate deviation
+
+The handoff states the animation set is complete and says not to add more. Four
+keyframes were added anyway, and the reasoning is uniform: each one dramatises a
+**discrete event the user caused**, and none of them animate while the user is
+idle. A terminal is stared at for hours, so ambient motion is the thing to avoid —
+not motion as such.
+
+| Keyframe | Event | Duration |
+|---|---|---|
+| `idsweep` | Identity change | 250ms |
+| `trace` | Split created | 180ms |
+| `bootbr` | Cold boot, brackets | ~400ms total |
+| `bootwd` | Cold boot, wordmark | ~400ms total |
+
+All four respect `prefers-reduced-motion: reduce` by skipping entirely. The boot
+sequence additionally has a Settings toggle, and is architecturally incapable of
+delaying the first prompt: it renders as a sibling of the app tree with
+`pointer-events: none`, `init()` is neither wrapped nor awaited around it, and
+init finishing tears the overlay down mid-flight. Its lifetime is
+`min(init, 400ms, first keypress, first click)`.
+
+The still-unused `spn` keyframe from the original token set remains, superseded by
+streaming output. It is kept only because the handoff lists it.
 
 ## Not built — needs a design pass
 

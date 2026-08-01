@@ -482,6 +482,18 @@ function BehaviorPane() {
             label="Restore sessions on launch"
           />
         </div>
+
+        <div className="prefrow">
+          <span className="prefrow__stack">
+            <span className="prefrow__label">Boot sequence</span>
+            <span className="prefrow__sub">brief initialisation animation on launch</span>
+          </span>
+          <Toggle
+            on={settings.bootSequence}
+            onChange={(on) => updateSettings({ bootSequence: on })}
+            label="Boot sequence"
+          />
+        </div>
       </Section>
     </div>
   )

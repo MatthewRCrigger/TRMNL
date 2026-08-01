@@ -14,6 +14,8 @@ import { useStore } from '../state/store'
 
 export interface SearchHit {
   blockId: string
+  /** The block's per-session ordinal, so a hit reads as a coordinate. */
+  seq: number
   /** Which command the hit belongs to, for the result row. */
   cmd: string
   /** The matching line, or the command itself when the command matched. */
@@ -129,6 +131,7 @@ export function Search() {
               onClick={() => useStore.getState().setSearchIndex(i)}
               type="button"
             >
+              <span className="search__hitseq">{String(hit.seq).padStart(4, '0')}</span>
               <span className="search__hitcmd">{hit.cmd || '—'}</span>
               <span className="search__hitline">
                 {hit.line.slice(Math.max(0, hit.at - 24), hit.at)}
@@ -156,7 +159,7 @@ export function Search() {
 
 /** Case-insensitive substring search across commands and output lines. */
 function findHits(
-  blocks: { id: string; cmd: string; lines: { text: string }[] }[],
+  blocks: { id: string; seq: number; cmd: string; lines: { text: string }[] }[],
   query: string,
 ): SearchHit[] {
   const needle = query.trim().toLowerCase()
@@ -168,6 +171,7 @@ function findHits(
     if (cmdAt !== -1) {
       hits.push({
         blockId: block.id,
+        seq: block.seq,
         cmd: block.cmd,
         line: block.cmd,
         at: cmdAt,
@@ -181,6 +185,7 @@ function findHits(
       if (at === -1) continue
       hits.push({
         blockId: block.id,
+        seq: block.seq,
         cmd: block.cmd,
         line: line.text,
         at,

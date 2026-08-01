@@ -97,6 +97,46 @@
   to { transform: rotate(360deg); }
 }
 
+/* Deliberate documented deviation: `bootbr` and `bootwd` are additions to the
+ * closed set above. They exist for the cold-boot sequence, which the handoff does
+ * not spec. Scoped to that one component and to a single 400ms pass at launch —
+ * nothing steady-state uses them, and the sequence is skipped entirely under
+ * prefers-reduced-motion. */
+
+@keyframes bootbr {
+  from { opacity: 0; transform: scale(2.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes bootwd {
+  from { opacity: 0; letter-spacing: 0.62em; }
+  to { opacity: 1; letter-spacing: 0.2em; }
+}
+
+/* Deliberate documented deviation: `idsweep` and `trace` below are also additions
+ * to the closed set above. Both exist because an instant change reads as a glitch
+ * rather than an act — switching identity repaints every derived colour at once,
+ * and a split divider otherwise materialises with no indication of where it came
+ * from. Each is one short transform/opacity pass on a transient element, and both
+ * are skipped entirely under prefers-reduced-motion. */
+
+/* Identity sweep. The --ac swap happens at the midpoint, so the trailing half of
+ * the band reveals already-repainted UI rather than announcing the change twice. */
+@keyframes idsweep {
+  0% { opacity: 0; transform: translateX(-100%); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(100%); }
+}
+
+/* Divider trace. One keyframe serves both axes: --trace-from-x / --trace-from-y
+ * pick which one starts collapsed, so a row split animates scaleY and a column
+ * split scaleX from the same declaration. Transform-only, so it stays on the
+ * compositor. */
+@keyframes trace {
+  from { transform: scale(var(--trace-from-x), var(--trace-from-y)); }
+  to { transform: scale(1, 1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* The caret still needs to read as a caret, so it keeps blinking; the
    * decorative pulse and spin do not. */

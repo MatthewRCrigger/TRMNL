@@ -57,6 +57,7 @@ const LIVE_HINTS =
 const LIVE_AFTER_MS = 4000
 
 let counter = 0
+/** DOM-unique block key. Not shown; see `Block.seq` for the displayed index. */
 const nextId = () => `b${++counter}`
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -71,6 +72,8 @@ export class PtySession {
   private liveTimer: number | null = null
   private scrollbackCap: number
 
+  /** Monotonic per-session block ordinal, shown in the block header. */
+  private seq = 0
   /** True once we have seen an OSC 133 marker; until then we assume no hooks. */
   private integrated = false
   /** The single catch-all block used when the shell has no integration. */
@@ -433,6 +436,7 @@ export class PtySession {
     this.repaint.reset()
     const block: Block = {
       id: nextId(),
+      seq: ++this.seq,
       cmd,
       cwd: this.cwd,
       ts: timestamp(),
@@ -461,6 +465,7 @@ export class PtySession {
   private openDegradedBlock(): void {
     const block: Block = {
       id: nextId(),
+      seq: ++this.seq,
       cmd: '',
       cwd: this.cwd,
       ts: timestamp(),
