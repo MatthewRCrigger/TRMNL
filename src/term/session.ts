@@ -146,6 +146,39 @@ export class PtySession {
     this.alive = true
   }
 
+  /**
+   * Bind to a shell that is already running, after a reload.
+   *
+   * Everything `start` does except spawn: the listeners are what make a session
+   * live, and the PTY on the other end never stopped. What cannot be recovered
+   * is the scrollback the previous page had already consumed — those bytes were
+   * delivered once, to a listener that no longer exists. So the session resumes
+   * mid-stream, showing output from the moment of re-attachment onward.
+   *
+   * The hook version is taken on faith rather than re-probed. The shell decided
+   * whether it was integrated when it started and cannot change its mind, and
+   * re-probing would mean writing to a shell that may be mid-command.
+   */
+  async attach(hookVersion?: number): Promise<void> {
+    if (this.alive) return
+
+    this.unlisten.push(
+      await listen<{ id: string; data: string }>('pty://data', (event) => {
+        if (event.payload.id !== this.id) return
+        this.handleData(event.payload.data)
+      }),
+    )
+    this.unlisten.push(
+      await listen<{ id: string }>('pty://exit', (event) => {
+        if (event.payload.id !== this.id) return
+        this.handleShellExit()
+      }),
+    )
+
+    this.expectedHookVersion = hookVersion ?? null
+    this.alive = true
+  }
+
   /** Send a command line to the shell. The shell echoes it; OSC 133 frames it. */
   async run(cmd: string): Promise<void> {
     this.submitted = true
