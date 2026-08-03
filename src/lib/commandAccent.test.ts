@@ -92,6 +92,19 @@ describe('accentFor', () => {
   })
 })
 
+describe('block accent persistence', () => {
+  // The store stamps `accent` onto a block when its command matches, and never
+  // recomputes it — so the header keeps the tool's colour after the global accent
+  // reverts, and editing the rules later cannot retroactively repaint history.
+  it('resolves the same colour the global override would use', () => {
+    expect(accentFor('shopify app dev', RULES)).toBe(accentFor('shopify theme push', RULES))
+  })
+
+  it('leaves unmatched commands without an accent to stamp', () => {
+    expect(accentFor('ls -la', RULES)).toBeNull()
+  })
+})
+
 describe('isValidColor', () => {
   it('accepts oklch', () => {
     expect(isValidColor('oklch(0.75 0.18 152)')).toBe(true)

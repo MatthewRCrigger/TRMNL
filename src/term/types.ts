@@ -36,6 +36,15 @@ export interface Block {
   running: boolean
   /** A long-running process that is not expected to exit. */
   live: boolean
+  /**
+   * Accent this command claimed while it ran, if any.
+   *
+   * Held on the block so its header keeps the tool's colour after the global
+   * accent reverts — the block is a record of what ran, and the colour is part
+   * of that record. Undefined for commands with no matching rule, which then
+   * follow the live accent as before.
+   */
+  accent?: string
   /** Parsed output, appended as it streams. */
   lines: Line[]
   /** Exit code. Undefined while running. */

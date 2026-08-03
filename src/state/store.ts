@@ -579,7 +579,16 @@ export const useStore = create<StoreState>((set, get) => ({
               void notifyComplete(last, existing.name)
             }
 
-            const sessions = { ...s.sessions, [id]: { ...existing, blocks } }
+            // A matched command's colour is stamped onto its own block, so the
+            // header keeps it once the global accent reverts. Resolved here
+            // because this is where the rules live; the session layer has no
+            // knowledge of them.
+            const stamped = blocks.map((b) => {
+              if (b.accent !== undefined) return b
+              const accent = accentFor(b.cmd, s.settingsValues.commandAccents)
+              return accent ? { ...b, accent } : b
+            })
+            const sessions = { ...s.sessions, [id]: { ...existing, blocks: stamped } }
             // A command starting or settling is what drives the accent, so this
             // recomputes on the same transition the notification uses.
             return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }

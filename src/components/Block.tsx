@@ -89,7 +89,16 @@ export const Block = memo(function Block({
       // A command that produced nothing has no body, so the header must not draw
       // a divider into empty space.
       data-empty={!block.structured && visibleLines.length === 0}
-      style={{ borderLeftColor: spineVar(state) }}
+      // A block that claimed an accent keeps it for good, so the record of what
+      // ran stays legible after the global accent reverts. Overriding --ac on the
+      // block itself rather than styling the header directly means the spine,
+      // chips and every color-mix-derived hairline inside follow along — the same
+      // property that makes the global switcher work, scoped to one block.
+      style={
+        block.accent
+          ? ({ borderLeftColor: spineVar(state), '--ac': block.accent } as React.CSSProperties)
+          : { borderLeftColor: spineVar(state) }
+      }
     >
       <div className="block__head">
         {/* Ordinal first: it makes the stream read as an addressable log rather
