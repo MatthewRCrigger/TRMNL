@@ -229,7 +229,7 @@ interface StoreState {
 
 export type SettingsTab = 'profiles' | 'appearance' | 'behavior' | 'keybindings'
 
-const DEFAULT_SETTINGS: Settings = {
+export const DEFAULT_SETTINGS: Settings = {
   accent: DEFAULT_IDENTITY.value,
   identityName: DEFAULT_IDENTITY.name,
   density: 'normal',
@@ -1258,12 +1258,61 @@ function applyTheme(settings: Settings, override?: string | null): void {
 }
 
 /** The window layout and session list, restored on the next launch. */
-interface PersistedWorkspace {
+export interface PersistedWorkspace {
   split: boolean
   splitDir: SplitDir
   paneSize: number
   railOpen: boolean
   panes: Record<PaneId, { active: number; sessions: { profileId?: string; cwd: string; history: string[] }[] }>
+}
+
+/**
+ * Fold this window's state into the config file as it exists on disk.
+ *
+ * Every window writes to one shared file, so a save cannot be a blind
+ * serialisation of what this window happens to hold. Settings and profiles are
+ * global: this window rewrites them, which is correct because a change to either
+ * is broadcast to every window as it is made. The workspace is per-window and
+ * keyed, so windows never touch each other's layouts.
+ *
+ * Unrecognised keys are preserved rather than dropped. Another window's
+ * workspace is exactly such a key from this window's point of view, and dropping
+ * it would mean the last window to save silently erases every other window's
+ * saved layout — which is the bug this whole function exists to prevent.
+ */
+export function mergeConfig(
+  raw: string | null,
+  update: {
+    settings: Settings
+    profiles: Profile[]
+    workspace: PersistedWorkspace | undefined
+    key: string
+  },
+): string {
+  let file: Record<string, unknown> = {}
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      // A JSON scalar or array parses fine but cannot carry keys; treating one
+      // as the config would throw on assignment or produce nonsense on save.
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        file = parsed as Record<string, unknown>
+      }
+    } catch {
+      // Corrupt on disk; this write replaces it wholesale. The alternative is
+      // refusing to save at all, which loses the running window's state too.
+    }
+  }
+
+  file.settings = update.settings
+  file.profiles = update.profiles
+  // An absent workspace means restore-on-launch is off, so the stale entry has
+  // to go — otherwise turning the setting off would leave the old layout on disk
+  // to be restored the next time it is turned on.
+  if (update.workspace) file[update.key] = update.workspace
+  else delete file[update.key]
+
+  return JSON.stringify(file, null, 2)
 }
 
 /** Debounced write of the persisted slice. Settings save immediately. */
@@ -1298,22 +1347,16 @@ function persist(): void {
     // windows saving layouts no longer race to be last.
     void invoke<string | null>('config_load')
       .catch(() => null)
-      .then((raw) => {
-        let file: Record<string, unknown> = {}
-        if (raw) {
-          try {
-            file = JSON.parse(raw) as Record<string, unknown>
-          } catch {
-            // Corrupt on disk; this write replaces it wholesale.
-          }
-        }
-        file.settings = settingsValues
-        file.profiles = profiles
-        if (workspace) file[workspaceKey()] = workspace
-        else delete file[workspaceKey()]
-
-        return invoke('config_save', { contents: JSON.stringify(file, null, 2) })
-      })
+      .then((raw) =>
+        invoke('config_save', {
+          contents: mergeConfig(raw, {
+            settings: settingsValues,
+            profiles,
+            workspace,
+            key: workspaceKey(),
+          }),
+        }),
+      )
       .catch((err) => console.error('trmnl: could not save config', err))
   }, 180)
 }
