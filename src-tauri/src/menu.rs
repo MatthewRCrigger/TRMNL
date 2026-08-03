@@ -12,22 +12,28 @@
 //! for the frontend to act on.
 //!
 //! That split is also why New/Close Session are events rather than native
-//! window operations. The app is a single window whose session table lives
-//! entirely in the webview (see `pty_kill_all` in lib.rs for what that costs
-//! us), so a native "close window" would take the whole app down with every
-//! session in it. The menu items therefore route to exactly the store actions
-//! ⌘T and ⌘W already call, and the accelerators are declared here so the native
-//! menu owns them — a menu item with an accelerator swallows the chord before
-//! the webview's keydown listener ever sees it, so declaring them in both
-//! places would be double-firing, not redundancy.
+//! window operations: a session is a tab in one window's rail, and the table
+//! describing it lives entirely in that window's webview, so there is no native
+//! operation that means "close session". The menu items route to exactly the
+//! store actions ⌘T and ⌘W already call, and the accelerators are declared here
+//! so the native menu owns them — a menu item with an accelerator swallows the
+//! chord before the webview's keydown listener ever sees it, so declaring them
+//! in both places would be double-firing, not redundancy.
+//!
+//! New Window is the opposite case, and the one custom item that is *not* an
+//! event: a window is a native object, so it is built natively (see window.rs)
+//! and no webview needs to be involved. Every other custom item is an
+//! instruction to one particular window's session table, which is why routing
+//! them to the focused window is load-bearing — see `handle_event`.
 
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
 
 /// Menu ids for the custom items. Constants rather than literals because the id
 /// is written at construction and read again in the event handler, and a typo
 /// between the two is a silently dead menu item.
 const ID_SETTINGS: &str = "settings";
+const ID_NEW_WINDOW: &str = "new-window";
 const ID_NEW_SESSION: &str = "new-session";
 const ID_CLOSE_SESSION: &str = "close-session";
 
@@ -41,15 +47,14 @@ const EVENT_CLOSE_SESSION: &str = "menu://close-session";
 ///
 /// Deliberately absent:
 ///
-/// - **New Window.** The PTY manager is process-wide but the session table is
-///   per-webview, so a second window would need an ownership model that does
-///   not exist yet. Deferred rather than half-built.
 /// - **Reload.** A reload discards the session table while the shells keep
-///   running, which is the exact failure `pty_kill_all` exists to contain: the
-///   new page reaps every previous shell at boot, so ⌘R would silently kill
-///   every running command in the app. The stock WebKit context menu already
-///   had its Reload removed for this reason; putting one back in the menu bar
-///   with a first-class accelerator would be strictly worse.
+///   running. That used to be unrecoverable, and is now merely lossy: sessions
+///   record an owning window, so a reloaded page adopts its own shells back
+///   (see `pty_adopt`) rather than reaping every shell in the app. What it
+///   still cannot recover is pane layout, so ⌘R would silently collapse a
+///   split. The stock WebKit context menu had its Reload removed for the older,
+///   worse version of this reason; there is not enough gained by putting one
+///   back with a first-class accelerator.
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let about = AboutMetadataBuilder::new()
         .name(Some("TRMNL"))
@@ -77,13 +82,17 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
-    // ⌘T rather than the Terminal.app-ish ⌘N: a session is a tab in the rail,
-    // not a window, and ⌘T is what the frontend has always bound.
+    // ⌘N opens a window and ⌘T opens a session, matching Terminal.app and every
+    // other tabbed Mac app. Session keeps ⌘T because that is what the frontend
+    // has always bound, and because a session is a tab in the rail rather than a
+    // window — the two are genuinely different things and now have the two
+    // accelerators users expect for them.
     let file_menu = Submenu::with_items(
         app,
         "File",
         true,
         &[
+            &MenuItem::with_id(app, ID_NEW_WINDOW, "New Window", true, Some("CmdOrCtrl+N"))?,
             &MenuItem::with_id(app, ID_NEW_SESSION, "New Session", true, Some("CmdOrCtrl+T"))?,
             &MenuItem::with_id(
                 app,
@@ -144,12 +153,29 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     )
 }
 
-/// Route a custom item to the frontend.
+/// Route a custom item to the window it was meant for.
 ///
-/// Emitted to the main window specifically rather than app-wide: these are
-/// instructions to one session table, and an app-wide emit would become a
-/// double-fire the moment a second window exists.
+/// New Window is handled here rather than emitted, because a window is a native
+/// object and no webview needs to be told about it.
+///
+/// Everything else is an instruction to exactly one session table, so it goes to
+/// the focused window. This used to name `main` explicitly, which was correct
+/// only while `main` was the only window there was: with a second window open,
+/// ⌘T in it would have opened a session in the *first* window, and ⌘W would have
+/// closed a session the user could not see. Emitting app-wide is equally wrong
+/// in the other direction — every window would act on it, so one ⌘T would open
+/// as many sessions as there are windows.
 pub fn handle_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    if id == ID_NEW_WINDOW {
+        // Cascade from the focused window so the new one lands just below and to
+        // the right of the window the user was actually looking at.
+        let from = focused(app);
+        if let Err(e) = crate::window::open(app, from.as_ref()) {
+            eprintln!("trmnl: could not open a new window: {e}");
+        }
+        return;
+    }
+
     let event = match id {
         ID_SETTINGS => EVENT_SETTINGS,
         ID_NEW_SESSION => EVENT_NEW_SESSION,
@@ -162,9 +188,35 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
         }
     };
 
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(e) = window.emit(event, ()) {
-            eprintln!("trmnl: could not emit {event}: {e}");
-        }
+    let Some(window) = focused(app) else {
+        // No window is focused, so there is no session table this could sensibly
+        // mean. Dropping it beats guessing: picking an arbitrary window would
+        // open or close a session somewhere the user is not looking.
+        eprintln!("trmnl: dropped {event}, no focused window");
+        return;
+    };
+
+    if let Err(e) = window.emit(event, ()) {
+        eprintln!("trmnl: could not emit {event}: {e}");
     }
+}
+
+/// The window the user is working in.
+///
+/// `Manager::get_focused_window` would be the obvious call, but it is behind
+/// Tauri's `unstable` feature and returns a `Window` rather than the
+/// `WebviewWindow` needed to emit — so the search is done here instead, over the
+/// same map for the same result.
+///
+/// Falling back to `main` covers the window that AppKit leaves in a menu-bar app
+/// when a menu is open but no window has key status. When even `main` is gone —
+/// it can be closed like any other window now — there is nothing to fall back
+/// to, and the caller decides what that means.
+fn focused<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
+    let windows = app.webview_windows();
+    windows
+        .values()
+        .find(|w| w.is_focused().unwrap_or(false))
+        .cloned()
+        .or_else(|| windows.get("main").cloned())
 }

@@ -10,6 +10,7 @@ mod proctree;
 mod pty;
 mod shell_integration;
 mod telemetry;
+mod window;
 
 use std::path::PathBuf;
 
