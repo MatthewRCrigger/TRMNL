@@ -24,6 +24,7 @@ describe('pickSettings', () => {
     expect(Object.keys(s).sort()).toEqual([
       'accent',
       'bootSequence',
+      'commandAccents',
       'density',
       'foldThreshold',
       'ghostSource',
@@ -113,5 +114,39 @@ describe('identity defaults', () => {
   it('falls back to USER for a config that stored ATHENA', () => {
     const s = pickSettings({ identityName: 'ATHENA' } as never)
     expect(s.identityName).toBe('USER')
+  })
+})
+
+describe('pickSettings: command accents', () => {
+  it('falls back to the shipped defaults when absent', () => {
+    expect(pickSettings(undefined).commandAccents.length).toBeGreaterThan(0)
+  })
+
+  it('respects an explicitly empty list', () => {
+    // Present-but-empty is a deliberate "I turned them all off", not missing data.
+    expect(pickSettings({ commandAccents: [] } as never).commandAccents).toEqual([])
+  })
+
+  it('drops a rule whose colour would break the theme', () => {
+    // A malformed colour propagates through every color-mix token, so the row is
+    // discarded rather than allowed through.
+    const s = pickSettings({
+      commandAccents: [
+        { id: 'a', match: 'ok', label: 'Fine', color: 'oklch(0.7 0.1 200)', enabled: true },
+        { id: 'b', match: 'bad', label: 'Broken', color: 'not-a-color', enabled: true },
+      ],
+    } as never)
+    expect(s.commandAccents.map((r) => r.id)).toEqual(['a'])
+  })
+
+  it('drops structurally invalid rows', () => {
+    const s = pickSettings({
+      commandAccents: [
+        { id: 'a', match: 'ok', label: 'Fine', color: 'oklch(0.7 0.1 200)', enabled: true },
+        { id: 'c', match: 'x', label: 'NoEnabled', color: 'oklch(0.7 0.1 200)' },
+        null,
+      ],
+    } as never)
+    expect(s.commandAccents.map((r) => r.id)).toEqual(['a'])
   })
 })

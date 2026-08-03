@@ -9,6 +9,12 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 
+import {
+  DEFAULT_COMMAND_ACCENTS,
+  accentFor,
+  isValidColor,
+  type CommandAccent,
+} from '../lib/commandAccent'
 import { notifyComplete, shouldNotify } from '../lib/notify'
 import { PtySession } from '../term/session'
 import { setKnownCommands, setRendererEnabled, type RendererId } from '../term/renderers'
@@ -76,6 +82,8 @@ export interface Settings {
   restoreOnLaunch: boolean
   bootSequence: boolean
   scrollbackCap: number
+  /** Per-command accent overrides; see lib/commandAccent.ts. */
+  commandAccents: CommandAccent[]
 }
 
 export interface HostInfo {
@@ -148,6 +156,8 @@ interface StoreState {
   updateSettings: (
     patch: Partial<Omit<Settings, 'renderers'>> & { renderers?: Partial<Record<RendererId, boolean>> },
   ) => void
+  /** Accent forced by a running command, or null when none is active. */
+  commandAccent: string | null
   /** Nonce+colour for the identity sweep; null when no sweep is in flight. */
   identitySweep: { id: number; color: string } | null
   /** Commit the pending accent to `--ac`. Called at the sweep's midpoint. */
@@ -192,6 +202,7 @@ const DEFAULT_SETTINGS: Settings = {
   restoreOnLaunch: true,
   bootSequence: true,
   scrollbackCap: 10_000,
+  commandAccents: DEFAULT_COMMAND_ACCENTS,
 }
 
 /** Live PTY sessions, keyed by session id. Outside the store — not serialisable. */
@@ -213,6 +224,7 @@ export const useStore = create<StoreState>((set, get) => ({
   settings: { open: false, tab: 'profiles', selectedProfile: null },
   search: { open: false, query: '', activeIndex: 0 },
   identitySweep: null,
+  commandAccent: null,
 
   panes: { a: { sessions: [], active: 0 }, b: { sessions: [], active: 0 } },
   sessions: {},
@@ -305,7 +317,13 @@ export const useStore = create<StoreState>((set, get) => ({
     await get().newSession(profiles.find((p) => p.isDefault)?.id ?? profiles[0]?.id)
   },
 
-  setFocus: (pane) => set({ focus: pane }),
+  setFocus: (pane) =>
+    // The accent follows focus: switching panes adopts whatever that pane is
+    // running, or reverts to the identity when it is idle.
+    set((st) => {
+      const next = { ...st, focus: pane }
+      return { focus: pane, commandAccent: syncCommandAccent(next) }
+    }),
 
   toggleSplit(dir) {
     const { split, splitDir } = get()
@@ -418,17 +436,32 @@ export const useStore = create<StoreState>((set, get) => ({
     // new accent sweeps the window. --ac is held back to the sweep's midpoint so
     // the trailing half of the band reveals UI that has already repainted; the
     // sweep element calls applyIdentity when it gets there.
+    // A command override is currently painting the UI, so an identity sweep would
+    // advertise a colour that will not appear until that command exits. Change
+    // the setting silently instead; it takes effect on revert.
+    const overridden = get().commandAccent !== null
     const sweeping =
-      patch.accent !== undefined && patch.accent !== current.accent && !prefersReducedMotion()
+      patch.accent !== undefined &&
+      patch.accent !== current.accent &&
+      !overridden &&
+      !prefersReducedMotion()
 
     if (sweeping) {
       // Density is not part of the ceremony; only --ac waits for the midpoint.
       document.documentElement.dataset.density = next.density
     } else {
-      applyTheme(next)
+      applyTheme(next, get().commandAccent)
     }
 
     set({ settingsValues: next })
+
+    // Editing the rules while something is running should take effect at once —
+    // enabling a rule for the running command colours the UI immediately, and
+    // disabling it reverts.
+    if (patch.commandAccents) {
+      set((st) => ({ commandAccent: syncCommandAccent(st) }))
+    }
+
     persist()
 
     if (sweeping) {
@@ -440,7 +473,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   /** Midpoint of the sweep: commit the accent that the band is carrying. */
   applyIdentity() {
-    applyTheme(get().settingsValues)
+    applyTheme(get().settingsValues, get().commandAccent)
   },
 
   endIdentitySweep(id) {
@@ -544,7 +577,10 @@ export const useStore = create<StoreState>((set, get) => ({
               void notifyComplete(last, existing.name)
             }
 
-            return { sessions: { ...s.sessions, [id]: { ...existing, blocks } } }
+            const sessions = { ...s.sessions, [id]: { ...existing, blocks } }
+            // A command starting or settling is what drives the accent, so this
+            // recomputes on the same transition the notification uses.
+            return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
           })
         },
         onCwd: (newCwd) => {
@@ -640,7 +676,10 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   activateSession: (pane, index) =>
-    set((s) => ({ panes: { ...s.panes, [pane]: { ...s.panes[pane], active: index } } })),
+    set((s) => {
+      const panes = { ...s.panes, [pane]: { ...s.panes[pane], active: index } }
+      return { panes, commandAccent: syncCommandAccent({ ...s, panes }) }
+    }),
 
   setSessionInput(id, input) {
     set((s) => {
@@ -832,6 +871,22 @@ export function pickSettings(stored: Partial<Settings> | undefined): Settings {
         ? Math.min(60, Math.max(3, stored.foldThreshold))
         : DEFAULT_SETTINGS.foldThreshold,
     renderers: { ...DEFAULT_SETTINGS.renderers, ...(stored.renderers ?? {}) },
+    // Each rule is validated individually: a malformed colour would propagate
+    // through every color-mix-derived token, so a bad row is dropped rather than
+    // allowed to break the theme. An absent list falls back to the shipped
+    // defaults; an empty-but-present list is respected as a deliberate choice.
+    commandAccents: Array.isArray(stored.commandAccents)
+      ? stored.commandAccents.filter(
+          (r): r is CommandAccent =>
+            !!r &&
+            typeof r.id === 'string' &&
+            typeof r.match === 'string' &&
+            typeof r.label === 'string' &&
+            typeof r.color === 'string' &&
+            typeof r.enabled === 'boolean' &&
+            isValidColor(r.color),
+        )
+      : DEFAULT_SETTINGS.commandAccents,
     ghostSource: ghost.includes(stored.ghostSource as GhostSource)
       ? (stored.ghostSource as GhostSource)
       : DEFAULT_SETTINGS.ghostSource,
@@ -857,10 +912,45 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
+/**
+ * Recompute the command accent from whatever is running in the focused pane.
+ *
+ * The accent is a single `:root` variable, so it cannot differ per pane. Scoping
+ * it to the *focused* pane's running command is the resolution: the colour tracks
+ * where you are looking. A command still running in a background pane does not
+ * fight for the theme, and focusing that pane picks its colour up.
+ *
+ * Called on every block update, focus change and settings change. It writes to
+ * the DOM only when the resolved colour actually differs, so the common case
+ * (output streaming, no colour change) costs one comparison.
+ */
+function syncCommandAccent(
+  state: Pick<StoreState, 'panes' | 'focus' | 'sessions' | 'settingsValues' | 'commandAccent'>,
+): string | null {
+  const pane = state.panes[state.focus]
+  const sessionId = pane.sessions[pane.active]
+  const session = sessionId ? state.sessions[sessionId] : undefined
+
+  let next: string | null = null
+  if (session) {
+    // The running block, if any. Only one command runs per session at a time.
+    const running = session.blocks.find((b) => b.running)
+    if (running) next = accentFor(running.cmd, state.settingsValues.commandAccents)
+  }
+
+  if (next !== state.commandAccent) {
+    applyTheme(state.settingsValues, next)
+  }
+  return next
+}
+
 /** Apply the token-level theme to :root. */
-function applyTheme(settings: Settings): void {
+function applyTheme(settings: Settings, override?: string | null): void {
   const root = document.documentElement
-  root.style.setProperty('--ac', settings.accent)
+  // A command override wins over the configured identity for as long as it runs.
+  // `settings.accent` is never mutated, so the user's identity survives untouched
+  // and reverting is just dropping the override.
+  root.style.setProperty('--ac', override ?? settings.accent)
   root.dataset.density = settings.density
 }
 

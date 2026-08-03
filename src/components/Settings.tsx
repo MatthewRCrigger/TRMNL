@@ -3,6 +3,7 @@
  * Settings save immediately; there is no Save button and there should not be one.
  */
 
+import { isValidColor, type CommandAccent } from '../lib/commandAccent'
 import { IDENTITIES, useStore, type Density, type GhostSource, type Profile, type SettingsTab } from '../state/store'
 import type { RendererId } from '../term/renderers'
 import { Toggle } from './Appearance'
@@ -368,6 +369,8 @@ function AppearancePane() {
         </div>
       </Section>
 
+      <CommandColorsSection />
+
       <div className="typeout">
         <div className="typeout__row">
           <span className="micro">TERMINAL FONT</span>
@@ -387,6 +390,105 @@ function AppearancePane() {
 
 function shortOklch(value: string): string {
   return value.replace(/0\./g, '.')
+}
+
+/** A blank rule starts disabled: an empty `match` matches nothing, and an empty
+ *  colour is not a valid `--ac`, so arming it before it is filled in would only
+ *  invite a broken theme. */
+const BLANK_ACCENT = (): CommandAccent => ({
+  id: `ca-${Date.now().toString(36)}`,
+  match: '',
+  color: 'oklch(0.75 0.18 152)',
+  label: '',
+  enabled: false,
+})
+
+function CommandColorsSection() {
+  const rules = useStore((s) => s.settingsValues.commandAccents)
+  const updateSettings = useStore((s) => s.updateSettings)
+
+  const patch = (i: number, changes: Partial<CommandAccent>) => {
+    const commandAccents = rules.map((rule, j) => (j === i ? { ...rule, ...changes } : rule))
+    updateSettings({ commandAccents })
+  }
+
+  return (
+    <Section label="COMMAND COLORS">
+      {/* First match wins (see lib/commandAccent.ts), so the list order is
+          meaningful and rows are rendered in stored order rather than sorted. */}
+      <div className="ccolors__note micro">FIRST MATCHING RULE WINS WHILE THE COMMAND RUNS</div>
+
+      <div className="ccolors">
+        {rules.map((rule, i) => {
+          const valid = isValidColor(rule.color)
+          return (
+            <div className="ccolors__row" key={rule.id}>
+              <span
+                className="ccolors__chip"
+                data-valid={valid}
+                style={valid ? { background: rule.color } : undefined}
+                aria-hidden="true"
+              />
+              <input
+                className="ccolors__match"
+                value={rule.match}
+                onChange={(e) => patch(i, { match: e.target.value })}
+                placeholder="command"
+                aria-label="Command word to match"
+                spellCheck={false}
+              />
+              <input
+                className="ccolors__label"
+                value={rule.label}
+                onChange={(e) => patch(i, { label: e.target.value })}
+                placeholder="label"
+                aria-label="Rule label"
+              />
+              <input
+                className="ccolors__color"
+                data-invalid={!valid}
+                value={rule.color}
+                onChange={(e) => patch(i, { color: e.target.value })}
+                placeholder="oklch(0.75 0.18 152)"
+                aria-label="Accent colour"
+                aria-invalid={!valid}
+                spellCheck={false}
+              />
+              <Toggle
+                on={rule.enabled}
+                onChange={(on) => patch(i, { enabled: on })}
+                label={`Enable ${rule.label || rule.match || 'rule'}`}
+              />
+              <button
+                className="ccolors__del"
+                onClick={() =>
+                  updateSettings({ commandAccents: rules.filter((_, j) => j !== i) })
+                }
+                type="button"
+                aria-label={`Remove ${rule.label || rule.match || 'rule'}`}
+              >
+                ✕
+              </button>
+            </div>
+          )
+        })}
+
+        <button
+          className="dashed dashed--inline"
+          onClick={() => updateSettings({ commandAccents: [...rules, BLANK_ACCENT()] })}
+          type="button"
+        >
+          + ADD COMMAND COLOR
+        </button>
+      </div>
+
+      {rules.some((r) => r.enabled && !isValidColor(r.color)) && (
+        <div className="warnrow">
+          ⚠ AN ENABLED RULE HAS AN UNREADABLE COLOUR — IT WILL BE SKIPPED UNTIL CORRECTED
+        </div>
+      )}
+    </Section>
+  )
 }
 
 function lineHeight(density: Density): string {
