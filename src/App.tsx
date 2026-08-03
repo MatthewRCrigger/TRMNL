@@ -1,7 +1,9 @@
 /** Window shell: title bar, rail, panes, divider, and the modal surfaces. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
+import { formatWindowTitle } from './lib/windowTitle'
 import { Appearance } from './components/Appearance'
 import { Boot } from './components/Boot'
 import { ContextMenu } from './components/ContextMenu'
@@ -61,6 +63,7 @@ export function App() {
   }, [syncRailForWidth])
 
   useGlobalKeys()
+  useWindowTitle()
 
   /* --- divider drag ------------------------------------------------------- */
 
@@ -286,6 +289,64 @@ function jumpBlock(direction: 1 | -1): void {
   // blocks is hard to perceive.
   target.setAttribute('data-jumped', 'true')
   window.setTimeout(() => target.removeAttribute('data-jumped'), 600)
+}
+
+/**
+ * Keep the macOS window title describing the focused session.
+ *
+ * Subscribed to the store directly rather than through selectors, because the
+ * title depends on almost everything — focus, the active session, its cwd, its
+ * running block, its grid — and pulling all of that through `useStore` would
+ * re-render the whole window shell on every output chunk just to compute a
+ * string. The subscriber runs on every store write instead, which is cheap: it
+ * reads five fields, formats them, and compares.
+ *
+ * That comparison is the important part. Output streaming updates the store many
+ * times a second while producing an identical title, and `setTitle` is an IPC
+ * call to the native side — so the guard is what keeps this from flooding the
+ * bridge. The title only actually changes on the transitions that matter: a
+ * command starting or settling, a cd, a focus or session switch, a resize.
+ */
+function useWindowTitle(): void {
+  useEffect(() => {
+    // Held outside the subscriber so it survives across store writes; the empty
+    // initial value guarantees the first computed title is always sent, even if
+    // it is the same "TRMNL" the config booted with.
+    let applied = ''
+
+    const sync = (state: ReturnType<typeof useStore.getState>) => {
+      const pane = state.panes[state.focus]
+      const sessionId = pane.sessions[pane.active]
+      const session = sessionId ? state.sessions[sessionId] : undefined
+
+      // Only the last block can be running — a session runs one command at a
+      // time — so this is the command the window is currently occupied with.
+      const last = session?.blocks.at(-1)
+      const running = last?.running ? last : undefined
+
+      const title = formatWindowTitle({
+        cwd: session?.cwd,
+        // A block opened by an unintegrated shell carries no command text; the
+        // process tree is the only description of what is running in that case.
+        command: running ? running.cmd || session?.tools[0] : undefined,
+        shell: session?.shell,
+        home: state.host?.home,
+        cols: session?.cols,
+        rows: session?.rows,
+      })
+
+      if (title === applied) return
+      applied = title
+      // Best-effort: a title that fails to apply is cosmetic, and throwing here
+      // would take down a store subscriber on every subsequent write.
+      void getCurrentWindow()
+        .setTitle(title)
+        .catch(() => {})
+    }
+
+    sync(useStore.getState())
+    return useStore.subscribe(sync)
+  }, [])
 }
 
 /** Global chords. Esc closes in priority order: settings → appearance → palette → search. */

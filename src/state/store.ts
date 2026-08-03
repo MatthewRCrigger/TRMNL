@@ -60,6 +60,18 @@ export interface Session {
   host: string
   cwd: string
   branch: string
+  /** Shell this session was spawned with, for the window title. */
+  shell: string
+  /**
+   * Character grid last reported to the PTY.
+   *
+   * Mirrored into the store purely so the window title can name it. The pane
+   * measures the grid and sends it straight to `pty_resize`, which is the only
+   * consumer that matters — this copy is descriptive, never authoritative, and
+   * nothing should resize a terminal from it.
+   */
+  cols: number
+  rows: number
   blocks: Block[]
   input: string
   /** Ghost suggestion remainder, computed on input. */
@@ -197,6 +209,8 @@ interface StoreState {
   closeSession: (id: string) => Promise<void>
   activateSession: (pane: PaneId, index: number) => void
   setSessionInput: (id: string, input: string) => void
+  /** Record the grid a pane just reported, so the window title can name it. */
+  setSessionSize: (id: string, cols: number, rows: number) => void
   submitInput: (id: string) => Promise<void>
   runCommand: (cmd: string, pane?: PaneId) => Promise<void>
   cancelCurrent: (id: string) => Promise<void>
@@ -660,6 +674,10 @@ export const useStore = create<StoreState>((set, get) => ({
       host: isRemote ? profile!.connectVia : 'local',
       cwd,
       branch: '',
+      shell: profile?.shell ?? state.host?.shell ?? '',
+      // The spawn size below, until the pane has measured itself and reported.
+      cols: 120,
+      rows: 32,
       blocks: [],
       input: '',
       ghost: '',
@@ -848,6 +866,18 @@ export const useStore = create<StoreState>((set, get) => ({
           [id]: { ...session, input, ghost: computeGhost(input, session, s.settingsValues), historyIndex: null },
         },
       }
+    })
+  },
+
+  setSessionSize(id, cols, rows) {
+    set((s) => {
+      const session = s.sessions[id]
+      if (!session) return s
+      // A ResizeObserver fires for changes that do not move the character grid —
+      // a one-pixel layout settle, a divider drag within a cell. Bailing on an
+      // unchanged grid keeps those from re-rendering every block in the pane.
+      if (session.cols === cols && session.rows === rows) return s
+      return { sessions: { ...s.sessions, [id]: { ...session, cols, rows } } }
     })
   },
 
