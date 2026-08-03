@@ -70,6 +70,24 @@ export interface Session {
   historyIndex: number | null
   /** A full-screen program owns this session; render a terminal, not blocks. */
   takeover: boolean
+  /**
+   * Command words of everything running under this session's shell, from the
+   * native process-tree scan. Empty when nothing is running.
+   *
+   * This is how a chained tool is found: the typed command may be `bun run
+   * start` while the tool that matters is `shopify`, several levels down. See
+   * `accentFor` and `src-tauri/src/proctree.rs`.
+   */
+  tools: string[]
+  /**
+   * Why the shell could not be started, or undefined when it did start.
+   *
+   * A session whose spawn failed used to look identical to a working one: the
+   * composer accepted input and every command sat on RUNNING forever, because
+   * there was no shell on the other end to answer. Recording the reason lets the
+   * pane say so instead.
+   */
+  failed?: string
 }
 
 export interface Settings {
@@ -210,8 +228,107 @@ const DEFAULT_SETTINGS: Settings = {
 /** Live PTY sessions, keyed by session id. Outside the store — not serialisable. */
 const ptys = new Map<string, PtySession>()
 
+/** Process-tree poll timers, keyed by session id. */
+const toolPolls = new Map<string, number>()
+
+/**
+ * How often to ask the native side what is running under a session's shell.
+ *
+ * A poll rather than a subscription because neither macOS nor sysinfo will push
+ * process-tree changes. 500ms reads as immediate to a person while keeping the
+ * scan — which refreshes process state only, no disks or CPU — cheap. The cost
+ * of the interval is that a command shorter than one tick may never be observed;
+ * that is acceptable because the tools this exists for (dev servers, watchers)
+ * run for minutes.
+ */
+const TOOL_POLL_MS = 500
+
 let sessionCounter = 0
-const nextSessionId = () => `s${++sessionCounter}`
+/**
+ * Session id, unique for the lifetime of the *process* — not the webview.
+ *
+ * The native `PtyManager` keeps its session map across a webview reload, while
+ * every module-level counter here resets to zero. A bare `s1` would therefore
+ * collide with the shell the previous page load already registered, `pty_spawn`
+ * would reject the id, and the new session would sit in the UI attached to
+ * nothing — every command stuck on RUNNING. The random suffix makes a reloaded
+ * page ask for ids the backend has never seen.
+ */
+const nextSessionId = () =>
+  `s${++sessionCounter}-${Math.random().toString(36).slice(2, 8)}`
+
+/**
+ * Poll the session's process tree while a command is running.
+ *
+ * Only polls when there is a running block with no accent yet: once a colour is
+ * locked in, or nothing is running, there is nothing left to discover and the
+ * scan would be pure overhead.
+ */
+function startToolPoll(id: string): void {
+  if (toolPolls.has(id)) return
+  const timer = window.setInterval(() => {
+    const state = useStore.getState()
+    const session = state.sessions[id]
+    if (!session) {
+      stopToolPoll(id)
+      return
+    }
+
+    const running = session.blocks.find((b) => b.running)
+    if (!running || running.accent !== undefined) {
+      // Nothing to resolve. Clear stale words so a settled session does not keep
+      // claiming a colour from a tree that has since exited.
+      if (session.tools.length) {
+        useStore.setState((s) => {
+          const existing = s.sessions[id]
+          if (!existing) return s
+          const sessions = { ...s.sessions, [id]: { ...existing, tools: [] } }
+          return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
+        })
+      }
+      return
+    }
+
+    void invoke<string[]>('pty_tools', { id })
+      .then((tools) => {
+        useStore.setState((s) => {
+          const existing = s.sessions[id]
+          if (!existing) return s
+          // Identical word lists are the common case between ticks; skipping the
+          // update avoids re-rendering every block on a timer.
+          if (
+            existing.tools.length === tools.length &&
+            existing.tools.every((w, i) => w === tools[i])
+          ) {
+            return s
+          }
+
+          // Stamp the running block so the colour locks for the rest of the run.
+          const blocks = existing.blocks.map((b) => {
+            if (!b.running || b.accent !== undefined) return b
+            const accent = accentFor(b.cmd, s.settingsValues.commandAccents, tools)
+            return accent ? { ...b, accent } : b
+          })
+
+          const sessions = { ...s.sessions, [id]: { ...existing, blocks, tools } }
+          return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
+        })
+      })
+      .catch(() => {
+        // A dead or unknown session is expected during teardown; the next tick
+        // sees the session gone and clears the timer.
+      })
+  }, TOOL_POLL_MS)
+  toolPolls.set(id, timer)
+}
+
+function stopToolPoll(id: string): void {
+  const timer = toolPolls.get(id)
+  if (timer !== undefined) {
+    window.clearInterval(timer)
+    toolPolls.delete(id)
+  }
+}
 
 export const useStore = create<StoreState>((set, get) => ({
   split: false,
@@ -235,6 +352,13 @@ export const useStore = create<StoreState>((set, get) => ({
   host: null,
 
   async init() {
+    // Reap shells left behind by a previous page load. `init` runs once per
+    // webview load, and a reload is the only way a second one happens — at which
+    // point the sessions this store described are gone but their shells are not.
+    // Killing them here, before anything spawns, is what keeps a reload from
+    // leaking a shell (and its PTY reader thread) on every cycle.
+    await invoke<number>('pty_kill_all').catch(() => 0)
+
     const host = await invoke<HostInfo>('host_info')
 
     // Known commands power did-you-mean; failure here is non-fatal.
@@ -351,6 +475,7 @@ export const useStore = create<StoreState>((set, get) => ({
     for (const id of panes.b.sessions) {
       void ptys.get(id)?.dispose()
       ptys.delete(id)
+      stopToolPoll(id)
     }
     set((s) => {
       const sessions = { ...s.sessions }
@@ -542,6 +667,7 @@ export const useStore = create<StoreState>((set, get) => ({
       history: restore?.history ?? [],
       historyIndex: null,
       takeover: false,
+      tools: [],
     }
 
     set((s) => ({
@@ -583,9 +709,16 @@ export const useStore = create<StoreState>((set, get) => ({
             // header keeps it once the global accent reverts. Resolved here
             // because this is where the rules live; the session layer has no
             // knowledge of them.
+            // Tree words only describe what is running now, so they inform the
+            // running block and never a settled one — a finished block's colour
+            // must not be decided by whatever happens to be alive later.
             const stamped = blocks.map((b) => {
               if (b.accent !== undefined) return b
-              const accent = accentFor(b.cmd, s.settingsValues.commandAccents)
+              const accent = accentFor(
+                b.cmd,
+                s.settingsValues.commandAccents,
+                b.running ? existing.tools : undefined,
+              )
               return accent ? { ...b, accent } : b
             })
             const sessions = { ...s.sessions, [id]: { ...existing, blocks: stamped } }
@@ -612,6 +745,7 @@ export const useStore = create<StoreState>((set, get) => ({
       get().settingsValues.scrollbackCap,
     )
     ptys.set(id, pty)
+    startToolPoll(id)
 
     try {
       await pty.start({
@@ -631,6 +765,14 @@ export const useStore = create<StoreState>((set, get) => ({
       }
     } catch (err) {
       console.error('trmnl: failed to spawn shell', err)
+      // Mark the session so the pane can report a dead shell. Without this the
+      // session renders as ready and every command hangs on RUNNING.
+      const reason = err instanceof Error ? err.message : String(err)
+      set((s) => {
+        const existing = s.sessions[id]
+        if (!existing) return s
+        return { sessions: { ...s.sessions, [id]: { ...existing, failed: reason } } }
+      })
     }
 
     persist()
@@ -653,6 +795,7 @@ export const useStore = create<StoreState>((set, get) => ({
     // the store update below throws.
     await ptys.get(id)?.dispose()
     ptys.delete(id)
+    stopToolPoll(id)
 
     set((s) => {
       const panes = { ...s.panes }
@@ -711,6 +854,9 @@ export const useStore = create<StoreState>((set, get) => ({
   async submitInput(id) {
     const session = get().sessions[id]
     if (!session) return
+    // A session with no shell behind it can only open a block that nothing will
+    // ever close, so refuse the command rather than hang it on RUNNING.
+    if (session.failed) return
     const cmd = session.input
     if (!cmd.trim()) {
       // An empty return still redraws the prompt, as a real terminal does.
@@ -949,7 +1095,15 @@ function syncCommandAccent(
   if (session) {
     // The running block, if any. Only one command runs per session at a time.
     const running = session.blocks.find((b) => b.running)
-    if (running) next = accentFor(running.cmd, state.settingsValues.commandAccents)
+    if (running) {
+      // A block that already claimed a colour keeps it for the rest of the run.
+      // The tree is polled, so a later poll could otherwise surface a different
+      // tool and flip the accent mid-command; locking to the first match keeps a
+      // `run-p` launching several watchers from flickering.
+      next =
+        running.accent ??
+        accentFor(running.cmd, state.settingsValues.commandAccents, session.tools)
+    }
   }
 
   if (next !== state.commandAccent) {

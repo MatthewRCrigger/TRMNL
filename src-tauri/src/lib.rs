@@ -5,12 +5,14 @@
 
 mod config;
 mod detect;
+mod proctree;
 mod pty;
 mod shell_integration;
 mod telemetry;
 
 use std::path::PathBuf;
 
+use parking_lot::Mutex;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -21,6 +23,9 @@ struct AppState {
     pty: PtyManager,
     telemetry: TelemetrySampler,
     integration_dir: PathBuf,
+    /// Reused across polls so a scan is one refresh rather than a fresh
+    /// process-table snapshot each time.
+    scanner: Mutex<sysinfo::System>,
 }
 
 /// What the frontend needs to know about the host on boot.
@@ -105,9 +110,33 @@ fn pty_exists(state: State<'_, AppState>, id: String) -> bool {
     state.pty.exists(&id)
 }
 
+/// Kill every live session. Called once by a page as it boots.
+///
+/// The frontend's session table lives in the webview, so a reload discards it
+/// while these shells keep running — unreachable, still holding PTYs. Reaping
+/// them at boot is what keeps a reload from leaking a shell per cycle.
+#[tauri::command]
+fn pty_kill_all(state: State<'_, AppState>) -> usize {
+    state.pty.kill_all()
+}
+
 #[tauri::command]
 fn sample_telemetry(state: State<'_, AppState>) -> Telemetry {
     state.telemetry.sample()
+}
+
+/// Command words of everything running under a session's shell.
+///
+/// This is what lets a chained tool claim the accent: `bun run start` says
+/// nothing about Shopify, but `shopify` is right there in the process tree four
+/// levels down. Ordered outermost-first; the frontend applies its own rules.
+#[tauri::command]
+fn pty_tools(state: State<'_, AppState>, id: String) -> Vec<String> {
+    let Some(root) = state.pty.pid(&id) else {
+        return Vec::new();
+    };
+    let mut scanner = state.scanner.lock();
+    proctree::scan(&mut scanner, root)
 }
 
 #[tauri::command]
@@ -188,6 +217,7 @@ pub fn run() {
                 pty: PtyManager::new(),
                 telemetry: TelemetrySampler::new(),
                 integration_dir,
+                scanner: Mutex::new(proctree::scanner()),
             });
             Ok(())
         })
@@ -198,6 +228,8 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_exists,
+            pty_kill_all,
+            pty_tools,
             sample_telemetry,
             detect_dir,
             config_load,

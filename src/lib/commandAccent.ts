@@ -97,15 +97,42 @@ function basename(word: string): string {
  * The colour for a command, or null when no enabled rule matches.
  *
  * First match wins, so ordering in Settings is meaningful.
+ *
+ * `running` holds the command words of everything alive under the session's
+ * shell, from the native process-tree scan. It exists because the typed command
+ * frequently does not name the tool that matters: `bun run start` expands, via a
+ * package script and a parallel runner, into `shopify theme dev` several levels
+ * down. Matching the tree is what lets that colour the interface without the
+ * project's scripts knowing TRMNL exists.
+ *
+ * The typed word is tried first, so an explicit `docker …` is never overridden
+ * by something incidental in its subtree. Failing that, the *rules* are walked
+ * in order and the first one present anywhere in the tree wins. Iterating rules
+ * rather than tree words is deliberate: a `run-p` starts its children
+ * concurrently, so tree order is a startup race, whereas rule order is
+ * configured and therefore deterministic. It is also why `shopify` beats
+ * `webpack` in a tree containing both — the shipped rules list Shopify first.
  */
-export function accentFor(cmd: string, rules: CommandAccent[]): string | null {
+export function accentFor(
+  cmd: string,
+  rules: CommandAccent[],
+  running?: readonly string[],
+): string | null {
   const word = commandWord(cmd)
-  if (!word) return null
+  const enabled = rules.filter((r) => r.enabled && r.match.trim())
 
-  for (const rule of rules) {
-    if (!rule.enabled) continue
-    const target = rule.match.trim().toLowerCase()
-    if (target && target === word) return rule.color
+  // The typed command is the strongest signal when it names a known tool.
+  if (word) {
+    for (const rule of enabled) {
+      if (rule.match.trim().toLowerCase() === word) return rule.color
+    }
+  }
+
+  if (!running?.length) return null
+
+  const tree = new Set(running.map((w) => w.trim().toLowerCase()).filter(Boolean))
+  for (const rule of enabled) {
+    if (tree.has(rule.match.trim().toLowerCase())) return rule.color
   }
   return null
 }

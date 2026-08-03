@@ -32,6 +32,7 @@ export function Pane({ pane, showClose }: Props) {
   const requestCompletion = useStore((s) => s.requestCompletion)
   const recallHistory = useStore((s) => s.recallHistory)
   const toggleBlockFold = useStore((s) => s.toggleBlockFold)
+  const newSession = useStore((s) => s.newSession)
 
   const sessionId = paneState.sessions[paneState.active] ?? null
   const session = sessionId ? sessions[sessionId] : undefined
@@ -199,13 +200,32 @@ export function Pane({ pane, showClose }: Props) {
         )}
       </div>
 
+      {/* A shell that never started would otherwise be invisible: the composer
+          looks ready and every command hangs on RUNNING. Say so instead, and
+          offer the one action that actually helps. */}
+      {session.failed && (
+        <div className="pane__dead">
+          <span className="dot" style={{ color: 'var(--err)' }} />
+          <span className="micro">SHELL NOT RUNNING</span>
+          <span className="pane__deadwhy">{session.failed}</span>
+          <span className="rule" />
+          <button
+            className="pane__deadact no-drag"
+            type="button"
+            onClick={() => void newSession(session.profileId, pane, { cwd: session.cwd })}
+          >
+            NEW SESSION
+          </button>
+        </div>
+      )}
+
       {/* Kept mounted during a takeover — anything half-typed survives — but
           inert, since keystrokes belong to the program the terminal is running. */}
       <Composer
         value={session.input}
         ghost={session.ghost}
-        focused={focused && !session.takeover}
-        disabled={session.takeover}
+        focused={focused && !session.takeover && !session.failed}
+        disabled={session.takeover || !!session.failed}
         shellLabel={shellLabel(host?.shell)}
         onChange={(v) => setSessionInput(sessionId, v)}
         onSubmit={() => void submitInput(sessionId)}

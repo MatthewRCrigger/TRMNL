@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Appearance } from './components/Appearance'
 import { Boot } from './components/Boot'
+import { ContextMenu } from './components/ContextMenu'
 import { Pane } from './components/Pane'
 import { Palette } from './components/Palette'
 import { Rail } from './components/Rail'
@@ -161,6 +162,7 @@ export function App() {
       <Appearance />
       <Settings />
       <Search />
+      <ContextMenu />
 
       {/* Focus-follows-click is handled per pane; this catches the gap between
           them so a click never lands nowhere. */}

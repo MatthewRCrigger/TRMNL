@@ -52,6 +52,10 @@ struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// The shell's PID, kept so the process-tree scan has a root to walk from.
+    /// See `proctree`: what a session is *really* running is only visible by
+    /// descending from here, not by reading the command the user typed.
+    pid: Option<u32>,
 }
 
 #[derive(Default)]
@@ -97,6 +101,7 @@ impl PtyManager {
         }
 
         let child = pair.slave.spawn_command(cmd)?;
+        let pid = child.process_id();
         // Drop the slave handle so the PTY reports EOF when the child exits.
         drop(pair.slave);
 
@@ -109,6 +114,7 @@ impl PtyManager {
                 master: pair.master,
                 writer,
                 child,
+                pid,
             },
         );
 
@@ -190,6 +196,27 @@ impl PtyManager {
 
     pub fn exists(&self, id: &str) -> bool {
         self.sessions.lock().contains_key(id)
+    }
+
+    /// Kill every session and forget them all.
+    ///
+    /// A webview reload throws away the frontend's session table but leaves this
+    /// map untouched, so the shells it described would keep running with nothing
+    /// able to reach them. The reloading page calls this before spawning, which
+    /// is the only moment we can know those sessions are unreachable.
+    pub fn kill_all(&self) -> usize {
+        let sessions: Vec<Session> = self.sessions.lock().drain().map(|(_, s)| s).collect();
+        let count = sessions.len();
+        for mut session in sessions {
+            let _ = session.child.kill();
+            let _ = session.child.wait();
+        }
+        count
+    }
+
+    /// The shell PID for a session, or None if it never started.
+    pub fn pid(&self, id: &str) -> Option<u32> {
+        self.sessions.lock().get(id).and_then(|s| s.pid)
     }
 }
 

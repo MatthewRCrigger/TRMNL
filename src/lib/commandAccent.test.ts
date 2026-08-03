@@ -105,6 +105,74 @@ describe('block accent persistence', () => {
   })
 })
 
+describe('accentFor: chained commands', () => {
+  const SHOPIFY = 'oklch(0.75 0.18 152)'
+  const CLAUDE = 'oklch(0.72 0.17 55)'
+
+  // Captured from a real `bun run start` in a Shopify theme project: the typed
+  // command names no tool, and `shopify` sits four levels down the process tree
+  // beside a concurrent webpack build. This is the case the feature exists for.
+  const LIVE_TREE = [
+    'start',
+    'shopify:dev',
+    'webpack:watch',
+    'shopify',
+    'theme',
+    'dev',
+    'development',
+    '.browserslistrc',
+    'webpack',
+    'webpack.dev.js',
+  ]
+
+  it('finds a tool the typed command never mentions', () => {
+    // Without the tree there is nothing in `bun run start` to match on.
+    expect(accentFor('bun run start', RULES)).toBeNull()
+    expect(accentFor('bun run start', RULES, LIVE_TREE)).toBe(SHOPIFY)
+  })
+
+  it('resolves by rule order, not by position in the tree', () => {
+    // `shopify:dev` and `webpack:watch` both precede `shopify` in the tree, and a
+    // run-p starts its children concurrently — so tree order is a startup race.
+    // Rule order is configured, which is what makes the result deterministic.
+    const WEBPACK = 'oklch(0.7 0.15 250)'
+    const webpackFirst: CommandAccent[] = [
+      { id: 'w', match: 'webpack', color: WEBPACK, label: 'Webpack', enabled: true },
+      ...RULES,
+    ]
+    expect(accentFor('bun run start', webpackFirst, LIVE_TREE)).toBe(WEBPACK)
+    expect(accentFor('bun run start', RULES, LIVE_TREE)).toBe(SHOPIFY)
+  })
+
+  it('prefers the typed command over anything in its subtree', () => {
+    // An explicit `claude …` must not be repainted by a tool it happens to spawn.
+    expect(accentFor('claude --help', RULES, ['shopify'])).toBe(CLAUDE)
+  })
+
+  it('ignores disabled rules in the tree', () => {
+    expect(accentFor('bun run start', RULES, ['off'])).toBeNull()
+  })
+
+  it('matches whole words only', () => {
+    // A tree containing `shopify-helper` is not a Shopify run.
+    expect(accentFor('bun run start', RULES, ['shopify-helper'])).toBeNull()
+  })
+
+  it('is unaffected by case and padding from the scan', () => {
+    expect(accentFor('bun run start', RULES, ['  Shopify  '])).toBe(SHOPIFY)
+  })
+
+  it('returns null when the tree holds nothing recognisable', () => {
+    expect(accentFor('bun run start', RULES, ['start', 'webpack', 'esbuild'])).toBeNull()
+  })
+
+  it('behaves as before when no tree is supplied', () => {
+    // The typed-command path must be untouched for callers that pass no tree.
+    expect(accentFor('shopify theme dev', RULES)).toBe(SHOPIFY)
+    expect(accentFor('ls -la', RULES, [])).toBeNull()
+  })
+})
+
 describe('isValidColor', () => {
   it('accepts oklch', () => {
     expect(isValidColor('oklch(0.75 0.18 152)')).toBe(true)

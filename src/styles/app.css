@@ -2522,3 +2522,109 @@
     inset 0 0 0 1px color-mix(in oklch, var(--ac) 5%, transparent),
     0 22px 60px -18px #000;
 }
+
+/* --- Context menu ---------------------------------------------------------- */
+
+/* Above the modal surfaces (100/101) so a right-click inside settings or the
+ * palette still gets its menu, but below the boot overlay (120), which must
+ * never have anything drawn over it. */
+.ctxmenu {
+  position: fixed;
+  z-index: 110;
+  min-width: 208px;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in oklch, var(--card) 96%, transparent);
+  border: 1px solid var(--bd);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--ac) 5%, transparent),
+    0 18px 44px -12px #000;
+}
+
+.ctxmenu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 6px 14px;
+  border-left: 2px solid transparent;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+/* A hairline that spans the plate, separating the menu's groups without the
+ * extra DOM a real separator item would cost. */
+.ctxmenu__item[data-group='true'] {
+  margin-top: 5px;
+  padding-top: 11px;
+  border-top: 1px solid var(--bd2);
+}
+
+.ctxmenu__item:hover {
+  border-left-color: var(--ac);
+  background: var(--wash);
+}
+
+.ctxmenu__label {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fgd);
+  white-space: nowrap;
+}
+
+.ctxmenu__item:hover .ctxmenu__label { color: var(--ac); }
+
+.ctxmenu__kbd {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--fgdd);
+  white-space: nowrap;
+}
+
+.ctxmenu__item[data-danger='true']:hover {
+  border-left-color: var(--err);
+}
+
+.ctxmenu__item[data-danger='true']:hover .ctxmenu__label {
+  color: var(--err);
+}
+
+/* --- Dead-shell notice ----------------------------------------------------- */
+
+/* Sits between the stream and the composer, in the seam where a status strip
+ * reads as belonging to the session rather than floating over it. */
+.pane__dead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 16px;
+  border-top: 1px solid color-mix(in oklch, var(--err) 30%, transparent);
+  background: color-mix(in oklch, var(--err) 7%, transparent);
+}
+
+.pane__dead .micro { color: var(--err); }
+
+.pane__deadwhy {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--fgdd);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+
+.pane__deadact {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: var(--t-label);
+  letter-spacing: 0.12em;
+  color: var(--fgd);
+  padding: 3px 9px;
+  border: 1px solid var(--bd);
+}
+
+.pane__deadact:hover { color: var(--ac); border-color: var(--ac); }
