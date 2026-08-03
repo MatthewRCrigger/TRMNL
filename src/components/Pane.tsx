@@ -32,6 +32,7 @@ export function Pane({ pane, showClose }: Props) {
   const requestCompletion = useStore((s) => s.requestCompletion)
   const recallHistory = useStore((s) => s.recallHistory)
   const toggleBlockFold = useStore((s) => s.toggleBlockFold)
+  const setSessionSize = useStore((s) => s.setSessionSize)
   const newSession = useStore((s) => s.newSession)
 
   const sessionId = paneState.sessions[paneState.active] ?? null
@@ -88,13 +89,14 @@ export function Pane({ pane, showClose }: Props) {
       const cols = Math.max(20, Math.floor((el.clientWidth - 32) / 7.2))
       const rows = Math.max(6, Math.floor(el.clientHeight / (12 * lh)))
       void getPty(sessionId)?.resize(cols, rows)
+      setSessionSize(sessionId, cols, rows)
     }
 
     report()
     const ro = new ResizeObserver(report)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [sessionId, session?.takeover])
+  }, [sessionId, session?.takeover, setSessionSize])
 
   if (!session || !sessionId) {
     return <div className="pane" data-focused={focused} />
@@ -192,7 +194,10 @@ export function Pane({ pane, showClose }: Props) {
                 backlog={pty.getTakeoverBacklog()}
                 subscribe={(handler) => pty.onRaw(handler)}
                 onData={(data) => void pty.write(data)}
-                onResize={(cols, rows) => void pty.resize(cols, rows)}
+                onResize={(cols, rows) => {
+                  void pty.resize(cols, rows)
+                  setSessionSize(sessionId, cols, rows)
+                }}
                 focused={focused}
               />
             </div>
