@@ -156,3 +156,28 @@ describe('stripAnsi', () => {
     expect(stripAnsi('\x1b]133;A\x07text')).toBe('text')
   })
 })
+
+describe('hook version announcement', () => {
+  it('parses the private hooks sequence', () => {
+    const p = new Osc133Parser()
+    expect(p.feed('\x1b]1337;trmnl-hooks=1\x07')).toEqual([{ type: 'hooks', version: 1 }])
+  })
+
+  it('parses a multi-digit version', () => {
+    const p = new Osc133Parser()
+    expect(p.feed('\x1b]1337;trmnl-hooks=42\x07')).toEqual([{ type: 'hooks', version: 42 }])
+  })
+
+  it('passes other OSC 1337 sequences through as text', () => {
+    // iTerm2 owns 1337 generally; only our own key is claimed.
+    const p = new Osc133Parser()
+    const events = p.feed('\x1b]1337;SetBadgeFormat=abc\x07')
+    expect(events.every((e) => e.type === 'text')).toBe(true)
+  })
+
+  it('survives being split across chunks', () => {
+    const p = new Osc133Parser()
+    const events = [...p.feed('\x1b]1337;trmnl-'), ...p.feed('hooks=1\x07')]
+    expect(events).toEqual([{ type: 'hooks', version: 1 }])
+  })
+})

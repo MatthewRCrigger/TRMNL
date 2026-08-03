@@ -36,6 +36,8 @@ export interface SpawnOptions {
   integrationDir?: string
   cols?: number
   rows?: number
+  /** Protocol version this build's hooks announce; see shell_integration.rs. */
+  hookVersion?: number
 }
 
 export interface SessionCallbacks {
@@ -76,6 +78,32 @@ export class PtySession {
   private seq = 0
   /** True once we have seen an OSC 133 marker; until then we assume no hooks. */
   private integrated = false
+  /**
+   * The version this build expects the hooks to announce.
+   *
+   * A shell started before an upgrade holds the previous hooks in memory, so it
+   * can emit `C` (opening a block) using a dialect this build no longer speaks —
+   * and the block then waits forever for a `D` that never comes. Comparing
+   * announced against expected turns that hang into an explicit degrade.
+   */
+  private expectedHookVersion: number | null = null
+  /** Version the shell announced, or null if it has announced nothing. */
+  private announcedHookVersion: number | null = null
+  /**
+   * Whether this session's OSC 133 markers can be trusted.
+   *
+   * Hooks that predate the version handshake announce nothing at all, so silence
+   * is itself a mismatch once this build expects an announcement — that is
+   * exactly the stale-shell case that otherwise hangs a block forever. A build
+   * with no expectation (`expectedHookVersion === null`) trusts markers as
+   * before, which keeps remote hosts running hand-installed hooks working.
+   */
+  private get markersTrusted(): boolean {
+    if (this.expectedHookVersion === null) return true
+    return this.announcedHookVersion === this.expectedHookVersion
+  }
+  /** True when the hooks are present but speak a version we do not. */
+  private hookMismatch = false
   /** The single catch-all block used when the shell has no integration. */
   private degraded: Block | null = null
 
@@ -110,6 +138,7 @@ export class PtySession {
       }),
     )
 
+    this.expectedHookVersion = opts.hookVersion ?? null
     await invoke('pty_spawn', { id: this.id, options: opts })
     this.alive = true
   }
@@ -222,6 +251,25 @@ export class PtySession {
 
   getBlocks(): Block[] {
     return this.blocks
+  }
+
+  /**
+   * True when the shell is running hooks from a different build.
+   *
+   * The session still works — it degrades to a single continuous block — but the
+   * UI should say so, because the block model silently not applying is otherwise
+   * indistinguishable from a bug.
+   */
+  hasHookMismatch(): boolean {
+    // Covers both a wrong version and hooks too old to announce one at all.
+    return this.integrated || this.announcedHookVersion !== null
+      ? !this.markersTrusted
+      : this.hookMismatch
+  }
+
+  /** Version the shell announced, for diagnostics. */
+  getAnnouncedHookVersion(): number | null {
+    return this.announcedHookVersion
   }
 
   /* --- internals --------------------------------------------------------- */
@@ -347,7 +395,25 @@ export class PtySession {
 
     for (const event of this.parser.feed(chunk)) {
       switch (event.type) {
+        case 'hooks': {
+          this.announcedHookVersion = event.version
+          // An unrecognised dialect means the shell is running hooks from a
+          // different build. Refuse to trust its boundary markers rather than
+          // half-understanding them.
+          this.hookMismatch =
+            this.expectedHookVersion !== null && event.version !== this.expectedHookVersion
+          if (this.hookMismatch) {
+            console.warn(
+              `trmnl: shell announced hook version ${event.version}, expected ` +
+                `${this.expectedHookVersion}. Degrading to a single block — ` +
+                'open a new session to pick up the current hooks.',
+            )
+          }
+          break
+        }
+
         case 'prompt-start':
+          if (!this.markersTrusted) break
           this.integrated = true
           // A prompt means the previous command is done; if one is still open
           // (no `D` arrived) close it optimistically as success.
@@ -356,11 +422,13 @@ export class PtySession {
           break
 
         case 'command-start':
+          if (!this.markersTrusted) break
           this.integrated = true
           this.inPrompt = true
           break
 
         case 'output-start': {
+          if (!this.markersTrusted) break
           this.integrated = true
           this.inPrompt = false
           // The command text comes from what we sent, not from the echo — the
@@ -373,6 +441,7 @@ export class PtySession {
         }
 
         case 'command-end':
+          if (!this.markersTrusted) break
           this.integrated = true
           this.closeBlock(event.code)
           break

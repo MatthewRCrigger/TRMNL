@@ -21,12 +21,28 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+/// Shell-integration protocol version.
+///
+/// Bump this whenever the hook scripts change in a way the frontend must know
+/// about. Each hook announces it once at startup via `OSC 1337 ; trmnl-hooks=N`,
+/// a private sequence that leaves the standard OSC 133 markers untouched.
+///
+/// A shell that announces nothing, or announces a version the frontend does not
+/// recognise, is treated as unintegrated: the session degrades to a single
+/// continuous block rather than waiting forever for a `D` that will never
+/// arrive. This is the same path remote hosts without hooks already take.
+pub const HOOK_VERSION: u32 = 1;
+
 pub const ZSH_HOOK: &str = r#"# TRMNL shell integration (zsh) — OSC 133 semantic prompts.
 # Sourced automatically by TRMNL. Safe to source twice.
 if [[ -n "$TRMNL_INTEGRATION_LOADED" ]]; then
   return 0
 fi
 TRMNL_INTEGRATION_LOADED=1
+
+# Announce the protocol version so the frontend knows these hooks are live and
+# speaks the same dialect. Emitted once, at load.
+printf '\033]1337;trmnl-hooks=__TRMNL_HOOK_VERSION__\a'
 
 __trmnl_osc() { printf '\033]133;%s\a' "$1"; }
 
@@ -75,6 +91,9 @@ if [ -n "$TRMNL_INTEGRATION_LOADED" ]; then
 fi
 TRMNL_INTEGRATION_LOADED=1
 
+# Announce the protocol version; see the zsh hook for why.
+printf '\033]1337;trmnl-hooks=__TRMNL_HOOK_VERSION__\a'
+
 __trmnl_osc() { printf '\033]133;%s\a' "$1"; }
 __trmnl_cwd() { printf '\033]7;file://%s%s\a' "${HOSTNAME:-localhost}" "$PWD"; }
 
@@ -115,6 +134,9 @@ if set -q TRMNL_INTEGRATION_LOADED
     exit 0
 end
 set -g TRMNL_INTEGRATION_LOADED 1
+
+# Announce the protocol version; see the zsh hook for why.
+printf '\033]1337;trmnl-hooks=__TRMNL_HOOK_VERSION__\a'
 
 function __trmnl_osc
     printf '\033]133;%s\a' $argv[1]
@@ -166,12 +188,17 @@ done
         hook = dir.join("trmnl.bash").to_string_lossy(),
     );
 
-    for (name, contents) in [
+    let version = HOOK_VERSION.to_string();
+    for (name, template) in [
         ("trmnl.zsh", ZSH_HOOK),
         ("trmnl.bash", BASH_HOOK),
         ("trmnl.fish", FISH_HOOK),
         ("trmnl.bashrc", bash_rc.as_str()),
     ] {
+        // HOOK_VERSION is the single source of truth; the scripts carry a
+        // placeholder so the constant cannot drift from what they announce.
+        let owned = template.replace("__TRMNL_HOOK_VERSION__", &version);
+        let contents = owned.as_str();
         let path = dir.join(name);
         // Only rewrite when the content actually differs, so we don't churn
         // mtimes (and any file watchers) on every launch.

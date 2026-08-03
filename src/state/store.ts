@@ -96,6 +96,8 @@ export interface HostInfo {
   integrationDir: string
   sourceLine: string
   configPath: string
+  /** Protocol version this build's shell hooks announce. */
+  hookVersion: number
 }
 
 interface PaneState {
@@ -609,6 +611,9 @@ export const useStore = create<StoreState>((set, get) => ({
         connectVia: profile?.connectVia,
         env: Object.fromEntries((profile?.env ?? []).map((e) => [e.key, e.value])),
         integrationDir: get().host?.integrationDir,
+        // Lets the session detect a shell still running pre-upgrade hooks and
+        // degrade instead of waiting for a `D` that will never arrive.
+        hookVersion: get().host?.hookVersion,
         cols: 120,
         rows: 32,
       })

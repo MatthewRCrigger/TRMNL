@@ -20,6 +20,7 @@
 import type { Tone } from './types'
 
 export type Osc133Event =
+  | { type: 'hooks'; version: number }
   | { type: 'prompt-start' }
   | { type: 'command-start' }
   | { type: 'output-start' }
@@ -148,6 +149,13 @@ function parseOsc(body: string): Osc133Event | null {
       default:
         return null
     }
+  }
+
+  // Private announcement from our own hooks: `1337;trmnl-hooks=N`. Anything else
+  // on 1337 belongs to iTerm2's vocabulary and is passed through untouched.
+  if (body.startsWith('1337;trmnl-hooks=')) {
+    const version = Number.parseInt(body.slice('1337;trmnl-hooks='.length), 10)
+    return Number.isFinite(version) ? { type: 'hooks', version } : null
   }
 
   if (body.startsWith('7;')) {

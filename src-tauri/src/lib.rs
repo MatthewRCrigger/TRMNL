@@ -38,6 +38,8 @@ struct HostInfo {
     /// The line to add to an rc file, for the settings UI to display.
     source_line: String,
     config_path: String,
+    /// Protocol version the installed hooks announce; see shell_integration.
+    hook_version: u32,
 }
 
 #[tauri::command]
@@ -58,6 +60,7 @@ fn host_info(state: State<'_, AppState>) -> HostInfo {
         integration_dir: state.integration_dir.to_string_lossy().to_string(),
         source_line: shell_integration::source_line(&state.integration_dir, &shell_kind),
         config_path: config::config_path().to_string_lossy().to_string(),
+        hook_version: shell_integration::HOOK_VERSION,
     }
 }
 
