@@ -741,12 +741,53 @@
 /* The header is its own band, divided from the output. This is the part of `1b`
  * that did real work: the command and its result are different kinds of
  * information and benefit from being visually separated. */
+/* Inverted: the header is a solid accent bar with knocked-out text. Every child
+ * below sets its own colour against the dark surface, so each has to be flipped
+ * here rather than inheriting — the bar is the one place in the interface where
+ * --bg is a foreground colour. */
 .block__head {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 7px 13px;
-  border-bottom: 1px solid var(--bd2);
+  background: var(--ac);
+  color: var(--bg);
+}
+
+.block__head .block__prompt,
+.block__head .block__cmd,
+.block__head .block__dur {
+  color: var(--bg);
+}
+
+/* The ordinal and timestamp stay subordinate, but as a wash of the background
+ * colour rather than the dim greys, which would muddy against the accent.
+ *
+ * 88% is not a taste choice: it is the weakest wash that still clears WCAG AA on
+ * every identity. ARES is the constraint — being the darkest accent, it leaves the
+ * least room against a dark foreground, and measures 4.53:1 here where a 62% wash
+ * gave only 3.27:1. The lighter accents land between 8.8 and 13.9. */
+.block__head .block__seq,
+.block__head .block__ts {
+  color: color-mix(in oklch, var(--bg) 88%, transparent);
+}
+
+/* The command is the content of the bar, so it carries the weight. */
+.block__head .block__cmd {
+  font-weight: 500;
+}
+
+/* Hover actions: outlined in the knocked-out colour instead of the accent. Same
+ * 88% floor as the metadata, for the same ARES-driven reason. */
+.block__head .block__action {
+  color: color-mix(in oklch, var(--bg) 88%, transparent);
+  border-color: color-mix(in oklch, var(--bg) 42%, transparent);
+}
+
+.block__head .block__action:hover {
+  color: var(--bg);
+  border-color: var(--bg);
+  background: color-mix(in oklch, var(--bg) 14%, transparent);
 }
 
 .block[data-empty='true'] .block__head { border-bottom: none; }
@@ -829,6 +870,18 @@
 
 .block__cancel:hover { background: color-mix(in oklch, var(--err) 20%, transparent); }
 
+/* On the accent bar the tinted-transparent treatment has nothing to tint, so the
+ * cancel button becomes a solid dark chip with the error colour on top. */
+.block__head .block__cancel {
+  background: var(--bg);
+  border-color: color-mix(in oklch, var(--err) 70%, transparent);
+  color: var(--err);
+}
+
+.block__head .block__cancel:hover {
+  background: color-mix(in oklch, var(--err) 22%, var(--bg));
+}
+
 .block__chip {
   display: flex;
   align-items: center;
@@ -841,10 +894,24 @@
   color: var(--ac);
 }
 
-.block__chip[data-state='running'],
-.block__chip[data-state='live'] { color: var(--warn); }
-.block__chip[data-state='failure'],
-.block__chip[data-state='cancelled'] { color: var(--err); }
+/* Success reads as part of the bar. */
+.block__head .block__chip { color: var(--bg); }
+
+/* --warn and --err are mid-lightness hues that would disappear against the
+ * accent, so a non-success state gets a dark plate and keeps its own colour —
+ * the signal matters more than the flat fill here. */
+.block__head .block__chip[data-state='running'],
+.block__head .block__chip[data-state='live'],
+.block__head .block__chip[data-state='failure'],
+.block__head .block__chip[data-state='cancelled'] {
+  padding: 1px 6px;
+  background: var(--bg);
+}
+
+.block__head .block__chip[data-state='running'],
+.block__head .block__chip[data-state='live'] { color: var(--warn); }
+.block__head .block__chip[data-state='failure'],
+.block__head .block__chip[data-state='cancelled'] { color: var(--err); }
 
 .block__dur {
   min-width: 42px;
