@@ -8,6 +8,7 @@
 
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import {
   DEFAULT_COMMAND_ACCENTS,
@@ -16,7 +17,13 @@ import {
   type CommandAccent,
 } from '../lib/commandAccent'
 import { notifyComplete, shouldNotify } from '../lib/notify'
-import { createSessionIds, ownerOf, windowLabel, workspaceKey } from '../lib/windowIdentity'
+import {
+  createSessionIds,
+  isMainWindow,
+  ownerOf,
+  windowLabel,
+  workspaceKey,
+} from '../lib/windowIdentity'
 import { PtySession, type SessionCallbacks } from '../term/session'
 import { setKnownCommands, setRendererEnabled, type RendererId } from '../term/renderers'
 import type { Block } from '../term/types'
@@ -945,11 +952,24 @@ export const useStore = create<StoreState>((set, get) => ({
     for (const paneId of ['a', 'b'] as PaneId[]) {
       const pane = state.panes[paneId]
       if (pane.sessions.length > 0) continue
-      // Pane B simply closes; pane A always needs a session.
+      // Pane B simply closes; pane A is the one that cannot be left empty.
       if (paneId === 'b' && state.split) {
         state.closePane()
       } else if (paneId === 'a') {
-        await state.newSession()
+        // Closing the last session closes the window, which is what every other
+        // macOS terminal does and the only way a secondary window can be shut
+        // with ⌘W at all — respawning here would make window 2 unclosable, since
+        // ⌘W would hand it a fresh session forever.
+        //
+        // The main window is the exception: it is the app's last one, and
+        // quitting on ⌘W would be a surprise from a chord that means "close
+        // this". It keeps the old behaviour of always holding a session.
+        if (isMainWindow()) {
+          await state.newSession()
+        } else {
+          await getCurrentWindow().close()
+          return
+        }
       }
     }
     persist()
