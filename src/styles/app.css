@@ -1237,12 +1237,18 @@
 
 .caret {
   display: inline-block;
-  width: 1.5px;
+  /* A chunky bar rather than a hairline — closer to a terminal's block cursor
+   * while still reading as an insertion point between characters. */
+  width: 3px;
   /* Slightly shorter than the 18px line box so it reads as a caret sitting on
    * the text line rather than filling the row. */
   height: 15px;
   background: var(--ac);
   flex: none;
+  /* The caret is laid out between the typed text and the ghost remainder, so any
+   * width it takes would push the ghost sideways. Half the width is reclaimed on
+   * each side, keeping the ghost exactly where the next character will land. */
+  margin: 0 -1.5px;
 }
 
 .caret[data-on='true'] { animation: blk 1.1s step-end infinite; }
