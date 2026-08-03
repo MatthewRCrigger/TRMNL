@@ -1195,15 +1195,38 @@
   flex: none;
 }
 
-.composer__field { position: relative; flex: 1; min-width: 0; }
+/* The field owns its own box rather than borrowing the global :focus-visible
+ * outline. An outline cannot be padded, which is why the text used to sit flush
+ * against it. */
+.composer__field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--bd2);
+  transition: border-color 0.16s;
+}
 
+.composer__field:focus-within {
+  border-color: var(--bd);
+}
+
+/* The generic focus ring would double up with the border above. */
+.composer__input:focus-visible {
+  outline: none;
+}
+
+/* A fixed line-height reserves the full line box whether or not anything is
+ * typed. Without it the row is only as tall as the caret when empty, and the
+ * border visibly grows the moment a character appears. */
 .composer__ghosts {
   display: flex;
   align-items: center;
+  height: 18px;
   font-family: var(--mono);
   font-weight: 400;
   font-size: 13px;
-  line-height: 1.35;
+  line-height: 18px;
   white-space: pre;
   pointer-events: none;
   overflow: hidden;
@@ -1215,6 +1238,8 @@
 .caret {
   display: inline-block;
   width: 1.5px;
+  /* Slightly shorter than the 18px line box so it reads as a caret sitting on
+   * the text line rather than filling the row. */
   height: 15px;
   background: var(--ac);
   flex: none;
@@ -1227,11 +1252,16 @@
  * text measurement. */
 .composer__input {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  /* Inset by the field's padding so the invisible input's text origin sits
+   * exactly on the visible span stack's. */
+  top: 4px;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  width: auto;
   font-family: var(--mono);
   font-size: 13px;
-  line-height: 1.35;
+  line-height: 18px;
   color: transparent;
   caret-color: transparent;
   background: transparent;
