@@ -42,9 +42,6 @@ export function Composer({
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [resolved, setResolved] = useState<string | null>(null)
-  /** Selection offsets mirrored from the real input, so the span stack can draw
-   *  the caret where the cursor actually is rather than always at the end. */
-  const [caret, setCaret] = useState({ start: 0, end: 0 })
   const [candidates, setCandidates] = useState<string[]>([])
   const completing = useRef(false)
 
@@ -122,24 +119,6 @@ export function Composer({
     }
   }, [value])
 
-  /**
-   * Sync the rendered caret to the input's real selection.
-   *
-   * The span stack has no way to know where the cursor is, so it has to be told.
-   * This runs after any event that can move it — keys, clicks, drags, Home/End —
-   * on the next frame, because at keydown time the browser has not yet applied
-   * the movement.
-   */
-  const syncCaret = () => {
-    requestAnimationFrame(() => {
-      const el = inputRef.current
-      if (!el) return
-      const start = el.selectionStart ?? el.value.length
-      const end = el.selectionEnd ?? start
-      setCaret({ start, end })
-    })
-  }
-
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     // ⌃C cancels; it is not remappable.
     if (event.ctrlKey && event.key === 'c') {
@@ -154,9 +133,6 @@ export function Composer({
         onSubmit()
         break
       case 'Tab':
-        // Accepting a ghost or completion extends the line, so the caret belongs
-        // at the new end.
-        syncCaret()
         // Always consume TAB. Without this the browser moves focus and the
         // composer silently loses the caret — there is nowhere sensible to tab
         // to in a terminal.
@@ -168,27 +144,18 @@ export function Composer({
         }
         break
       case 'ArrowUp':
-        // Vertical arrows recall history rather than moving within the line, so
-        // they replace the value wholesale and the caret lands at its end.
+        // History recall only when the caret is at the start of a single line.
         event.preventDefault()
         onHistory(-1)
-        syncCaret()
         break
       case 'ArrowDown':
         event.preventDefault()
         onHistory(1)
-        syncCaret()
         break
       default:
         break
     }
   }
-
-  // Clamp against `value`: a controlled update can land before the selection
-  // event that follows it, leaving a stale offset past the end of the string.
-  const caretStart = Math.min(caret.start, value.length)
-  const selectionWidth = Math.max(0, Math.min(caret.end, value.length) - caretStart)
-  const atEnd = caretStart + selectionWidth >= value.length
 
   return (
     <div className="composer no-drag" data-disabled={disabled} onMouseDown={onFocus}>
@@ -214,24 +181,9 @@ export function Composer({
 
       <div className="composer__field">
         <span className="composer__ghosts">
-          {/* The typed text is split at the caret so the caret can be drawn in
-              place. Rendering it only between text and ghost — as the design's
-              pattern originally did — pins it to the end of the line, which
-              leaves you editing blind after arrowing backwards. */}
-          <span className="composer__typed">{value.slice(0, caretStart)}</span>
-          {selectionWidth > 0 ? (
-            <span className="composer__selected">
-              {value.slice(caretStart, caretStart + selectionWidth)}
-            </span>
-          ) : (
-            <span className="caret" data-on={focused} />
-          )}
-          <span className="composer__typed">
-            {value.slice(caretStart + selectionWidth)}
-          </span>
-          {/* A completion can only apply at the end of the line, so it is hidden
-              whenever the caret is somewhere in the middle. */}
-          {atEnd && <span className="composer__ghost">{ghost}</span>}
+          <span className="composer__typed">{value}</span>
+          <span className="caret" data-on={focused} />
+          <span className="composer__ghost">{ghost}</span>
         </span>
         <input
           ref={inputRef}
@@ -241,16 +193,9 @@ export function Composer({
             // Typing supersedes the candidate list.
             if (candidates.length > 0) setCandidates([])
             onChange(e.target.value)
-            syncCaret()
           }}
           onKeyDown={onKeyDown}
-          // Covers every way the cursor can move: arrows, Home/End, clicking,
-          // dragging a selection, ⌘A.
-          onSelect={syncCaret}
-          onFocus={() => {
-            onFocus()
-            syncCaret()
-          }}
+          onFocus={onFocus}
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"
