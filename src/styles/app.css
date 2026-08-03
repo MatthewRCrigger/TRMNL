@@ -1233,6 +1233,13 @@
 }
 
 .composer__typed { color: var(--fg); }
+
+/* A range selection replaces the caret. The real input's text is transparent, so
+ * the native ::selection never shows — this stands in for it. */
+.composer__selected {
+  color: var(--bg);
+  background: var(--ac);
+}
 .composer__ghost { color: var(--fgdd); }
 
 .caret {
@@ -1245,10 +1252,18 @@
   height: 15px;
   background: var(--ac);
   flex: none;
-  /* The caret is laid out between the typed text and the ghost remainder, so any
-   * width it takes would push the ghost sideways. Half the width is reclaimed on
-   * each side, keeping the ghost exactly where the next character will land. */
+  /* The caret is laid out inline between the two halves of the typed text, so any
+   * width it takes would shift everything after it. Half the width is reclaimed
+   * on each side, which both keeps the text still and centres the bar on the
+   * insertion point the way a text editor does. */
   margin: 0 -1.5px;
+}
+
+/* At offset 0 there is nothing to the left, so a centred caret would hang past
+ * the field's padding. Shift it fully inside. */
+.composer__typed:empty + .caret {
+  margin-left: 0;
+  margin-right: -3px;
 }
 
 .caret[data-on='true'] { animation: blk 1.1s step-end infinite; }
