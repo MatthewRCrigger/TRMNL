@@ -29,6 +29,8 @@
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
 
+use crate::config::{self, ProfileSummary};
+
 /// Menu ids for the custom items. Constants rather than literals because the id
 /// is written at construction and read again in the event handler, and a typo
 /// between the two is a silently dead menu item.
@@ -36,6 +38,13 @@ const ID_SETTINGS: &str = "settings";
 const ID_NEW_WINDOW: &str = "new-window";
 const ID_NEW_SESSION: &str = "new-session";
 const ID_CLOSE_SESSION: &str = "close-session";
+
+/// Prefix for the per-profile items, followed by the profile's own id.
+///
+/// The id carries the profile rather than an index into the submenu, because an
+/// index is only meaningful next to the list it was built from: rename or delete
+/// a profile and a stored index silently starts a session from the wrong one.
+const ID_PROFILE_PREFIX: &str = "profile:";
 
 /// Events the frontend listens for. Namespaced like `pty://…` so a menu event
 /// is recognisable at the listener side.
@@ -104,6 +113,17 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    // Profiles are the user's saved presets, so the menu is only worth showing
+    // when there are some — an empty "New Session with Profile" submenu reads as
+    // something broken rather than something unused. `profiles()` returns an
+    // empty list for a missing or malformed config, which lands in the same
+    // branch.
+    let profiles = config::profiles();
+    if !profiles.is_empty() {
+        file_menu.append(&PredefinedMenuItem::separator(app)?)?;
+        file_menu.append(&profile_submenu(app, &profiles)?)?;
+    }
+
     // All predefined: these have to reach the webview's editing commands through
     // the responder chain, which is precisely what a custom item cannot do.
     let edit_menu = Submenu::with_items(
@@ -165,7 +185,66 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 /// closed a session the user could not see. Emitting app-wide is equally wrong
 /// in the other direction — every window would act on it, so one ⌘T would open
 /// as many sessions as there are windows.
+///
+/// "New Session with Profile", one item per saved preset.
+///
+/// The default profile leads and is labelled as such, because it is the one ⌘T
+/// already opens — showing it first makes the submenu a superset of what the
+/// accelerator does rather than a competing list. The rest keep the order they
+/// were defined in, which is the order the settings pane shows them.
+///
+/// No accelerators: there are as many items as the user has profiles, so any
+/// scheme would run out or collide with a chord that already means something.
+/// ⌘T stays the one keyboard path to a new session.
+fn profile_submenu<R: Runtime>(
+    app: &AppHandle<R>,
+    profiles: &[ProfileSummary],
+) -> tauri::Result<Submenu<R>> {
+    let submenu = Submenu::new(app, "New Session with Profile", true)?;
+
+    let mut ordered: Vec<&ProfileSummary> = profiles.iter().collect();
+    ordered.sort_by_key(|p| !p.is_default);
+
+    for profile in ordered {
+        let label = if profile.is_default {
+            format!("{} (Default)", profile.name)
+        } else {
+            profile.name.clone()
+        };
+        submenu.append(&MenuItem::with_id(
+            app,
+            format!("{ID_PROFILE_PREFIX}{}", profile.id),
+            label,
+            true,
+            None::<&str>,
+        )?)?;
+    }
+
+    Ok(submenu)
+}
+
+/// Send a menu event to the window the user is actually looking at.
+///
+/// Dropped with a log line when nothing is focused: picking an arbitrary window
+/// would open or close a session somewhere the user cannot see.
+fn emit_to_focused<R: Runtime>(app: &AppHandle<R>, event: &str, payload: Option<String>) {
+    let Some(window) = focused(app) else {
+        eprintln!("trmnl: dropped {event}, no focused window");
+        return;
+    };
+    if let Err(e) = window.emit(event, payload) {
+        eprintln!("trmnl: could not emit {event}: {e}");
+    }
+}
+
 pub fn handle_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    // A profile item carries its profile's id, so it routes like New Session but
+    // with a payload naming which preset to open.
+    if let Some(profile_id) = id.strip_prefix(ID_PROFILE_PREFIX) {
+        emit_to_focused(app, EVENT_NEW_SESSION, Some(profile_id.to_string()));
+        return;
+    }
+
     if id == ID_NEW_WINDOW {
         // Cascade from the focused window so the new one lands just below and to
         // the right of the window the user was actually looking at.
@@ -188,17 +267,8 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
         }
     };
 
-    let Some(window) = focused(app) else {
-        // No window is focused, so there is no session table this could sensibly
-        // mean. Dropping it beats guessing: picking an arbitrary window would
-        // open or close a session somewhere the user is not looking.
-        eprintln!("trmnl: dropped {event}, no focused window");
-        return;
-    };
-
-    if let Err(e) = window.emit(event, ()) {
-        eprintln!("trmnl: could not emit {event}: {e}");
-    }
+    // No profile: the frontend falls back to the default, exactly as ⌘T does.
+    emit_to_focused(app, event, None);
 }
 
 /// The window the user is working in.

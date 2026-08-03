@@ -25,8 +25,8 @@ export function listenForMenuEvents(): () => void {
   let disposed = false
   const unlisten: UnlistenFn[] = []
 
-  const register = async (event: string, run: () => void) => {
-    const un = await listen(event, run)
+  const register = async <T = null>(event: string, run: (payload: T) => void) => {
+    const un = await listen<T>(event, (e) => run(e.payload))
     if (disposed) un()
     else unlisten.push(un)
   }
@@ -39,8 +39,11 @@ export function listenForMenuEvents(): () => void {
     else store.openSettings()
   })
 
-  void register('menu://new-session', () => {
-    void useStore.getState().newSession()
+  // Carries a profile id when the click came from the profile submenu, and null
+  // from plain New Session — `newSession` treats undefined as "use the default",
+  // which is what ⌘T has always done.
+  void register<string | null>('menu://new-session', (profileId) => {
+    void useStore.getState().newSession(profileId ?? undefined)
   })
 
   void register('menu://close-session', () => {
