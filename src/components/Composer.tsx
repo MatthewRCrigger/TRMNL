@@ -180,9 +180,13 @@ export function Composer({
       <span className="composer__prompt">❯</span>
 
       <div className="composer__field">
-        <span className="composer__ghosts">
-          <span className="composer__typed">{value}</span>
-          <span className="caret" data-on={focused} />
+        {/* Ghost layer, behind the input. It holds an invisible copy of the typed
+            text purely as a spacer so the suggestion starts in the right column —
+            same trick as before, no text measurement — but it no longer draws the
+            caret or the typed text. The input itself is now visible and renders
+            both, natively. */}
+        <span className="composer__ghosts" aria-hidden="true">
+          <span className="composer__spacer">{value}</span>
           <span className="composer__ghost">{ghost}</span>
         </span>
         <input

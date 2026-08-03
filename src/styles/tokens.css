@@ -83,6 +83,8 @@
 
 /* --- Animation. The complete set; the handoff says do not add more. ------- */
 
+/* Retained from the handoff's canonical set. Currently unused: the composer's
+ * caret is the browser's own, which blinks per the OS setting. */
 @keyframes blk {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
@@ -138,12 +140,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* The caret still needs to read as a caret, so it keeps blinking; the
-   * decorative pulse and spin do not. */
+  /* The decorative pulse, sweep and trace all collapse. The text caret is not
+   * affected — it is the browser's, and macOS owns whether it blinks. */
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .caret { animation: blk 1.1s step-end infinite !important; }
 }

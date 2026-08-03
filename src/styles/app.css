@@ -1134,9 +1134,9 @@
   opacity: 0.4;
 }
 
-.composer[data-disabled='true'] .caret {
-  animation: none;
-  opacity: 0;
+/* A disabled composer (a full-screen program owns the pane) shows no caret. */
+.composer[data-disabled='true'] .composer__input {
+  caret-color: transparent;
 }
 
 /* The input row. Its width never changes, so the field cannot shrink while you
@@ -1216,10 +1216,16 @@
   outline: none;
 }
 
-/* A fixed line-height reserves the full line box whether or not anything is
- * typed. Without it the row is only as tall as the caret when empty, and the
- * border visibly grows the moment a character appears. */
+/* Ghost layer. Absolutely positioned so it underlays the input without taking
+ * part in the field's layout — the input alone sets the height, which is why the
+ * box no longer changes size with content. It inherits the input's exact type
+ * metrics so the spacer occupies precisely the width of the typed text and the
+ * suggestion starts in the right column, with no measurement. */
 .composer__ghosts {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  right: 8px;
   display: flex;
   align-items: center;
   height: 18px;
@@ -1233,43 +1239,35 @@
 }
 
 .composer__typed { color: var(--fg); }
-.composer__ghost { color: var(--fgdd); }
 
-.caret {
-  display: inline-block;
-  /* A chunky bar rather than a hairline — closer to a terminal's block cursor
-   * while still reading as an insertion point between characters. */
-  width: 3px;
-  /* Slightly shorter than the 18px line box so it reads as a caret sitting on
-   * the text line rather than filling the row. */
-  height: 15px;
-  background: var(--ac);
-  flex: none;
-  /* The caret is laid out between the typed text and the ghost remainder, so any
-   * width it takes would push the ghost sideways. Half the width is reclaimed on
-   * each side, keeping the ghost exactly where the next character will land. */
-  margin: 0 -1.5px;
+/* Reserves exactly the width of the typed text so the ghost begins in the right
+ * column. Invisible — the visible copy is the real input, sitting on top. */
+.composer__spacer { color: transparent; }
+
+/* The input paints its own text now, so the native selection is visible. */
+.composer__input::selection {
+  background: color-mix(in oklch, var(--ac) 35%, transparent);
+  color: var(--fg);
 }
-
-.caret[data-on='true'] { animation: blk 1.1s step-end infinite; }
-.caret[data-on='false'] { opacity: 0.35; animation: none; }
+.composer__ghost { color: var(--fgdd); }
 
 /* The real input sits over the span stack, invisible. This is what avoids any
  * text measurement. */
+/* A real, visible text field. It renders the typed text and its own native
+ * caret, which is why arrow keys, Home/End, ⌥←/→ word jumps, drag-select and
+ * macOS text services all behave exactly as the OS intends — none of it is
+ * reimplemented. The ghost layer behind supplies only the dim suggestion, which
+ * an <input> cannot style on its own. */
 .composer__input {
-  position: absolute;
-  /* Inset by the field's padding so the invisible input's text origin sits
-   * exactly on the visible span stack's. */
-  top: 4px;
-  left: 8px;
-  right: 8px;
-  bottom: 4px;
-  width: auto;
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
   font-family: var(--mono);
   font-size: 13px;
   line-height: 18px;
-  color: transparent;
-  caret-color: transparent;
+  color: var(--fg);
+  caret-color: var(--ac);
   background: transparent;
 }
 
