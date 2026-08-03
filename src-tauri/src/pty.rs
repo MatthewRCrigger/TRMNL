@@ -56,6 +56,15 @@ struct Session {
     /// See `proctree`: what a session is *really* running is only visible by
     /// descending from here, not by reading the command the user typed.
     pid: Option<u32>,
+    /// Label of the window this session belongs to.
+    ///
+    /// This is what replaced `kill_all`. A reload used to be indistinguishable
+    /// from a window closing — both left sessions in this map with nothing able
+    /// to reach them — so the reloading page reaped *everything*, which under
+    /// multiple windows would mean one window's reload killing another's shells.
+    /// Recording the owner makes the two cases distinguishable: a reload
+    /// re-attaches to its own sessions, and only a real close reaps them.
+    window: String,
 }
 
 #[derive(Default)]
@@ -69,7 +78,16 @@ impl PtyManager {
     }
 
     /// Spawn a shell attached to a new PTY and start streaming its output.
-    pub fn spawn(&self, app: &AppHandle, id: String, opts: SpawnOptions) -> Result<()> {
+    ///
+    /// `window` is the label of the window that will own the session; see
+    /// `Session::window` for why ownership is recorded rather than inferred.
+    pub fn spawn(
+        &self,
+        app: &AppHandle,
+        window: &str,
+        id: String,
+        opts: SpawnOptions,
+    ) -> Result<()> {
         if self.sessions.lock().contains_key(&id) {
             return Err(anyhow!("session {id} already exists"));
         }
@@ -115,13 +133,21 @@ impl PtyManager {
                 writer,
                 child,
                 pid,
+                window: window.to_string(),
             },
         );
 
         // One reader thread per session. Blocking reads are fine here; the thread
         // ends when the PTY hits EOF after the shell exits.
+        //
+        // Output goes to the owning window with `emit_to`, not app-wide: a
+        // broadcast would hand every window every other window's output, and
+        // each of those windows has a session table that would happily match the
+        // id and append it. The listener side cannot tell the difference, so the
+        // filtering has to happen here.
         let app = app.clone();
         let read_id = id.clone();
+        let read_window = window.to_string();
         std::thread::Builder::new()
             .name(format!("pty-read-{read_id}"))
             .spawn(move || {
@@ -132,7 +158,8 @@ impl PtyManager {
                         Ok(n) => {
                             let data = String::from_utf8_lossy(&buf[..n]).to_string();
                             if app
-                                .emit(
+                                .emit_to(
+                                    read_window.as_str(),
                                     "pty://data",
                                     PtyOutput {
                                         id: read_id.clone(),
@@ -147,7 +174,8 @@ impl PtyManager {
                         Err(_) => break,
                     }
                 }
-                let _ = app.emit(
+                let _ = app.emit_to(
+                    read_window.as_str(),
                     "pty://exit",
                     PtyExit {
                         id: read_id,
@@ -198,16 +226,44 @@ impl PtyManager {
         self.sessions.lock().contains_key(id)
     }
 
-    /// Kill every session and forget them all.
+    /// Ids of a window's sessions, oldest first.
     ///
-    /// A webview reload throws away the frontend's session table but leaves this
-    /// map untouched, so the shells it described would keep running with nothing
-    /// able to reach them. The reloading page calls this before spawning, which
-    /// is the only moment we can know those sessions are unreachable.
-    pub fn kill_all(&self) -> usize {
-        let sessions: Vec<Session> = self.sessions.lock().drain().map(|(_, s)| s).collect();
-        let count = sessions.len();
-        for mut session in sessions {
+    /// This is what a reloading page calls instead of the old `kill_all`. The
+    /// sessions are still alive and still owned by this window, so the page can
+    /// re-attach to them rather than reap them and spawn replacements — the
+    /// shell, its scrollback and its running command all survive the reload.
+    pub fn ids_for_window(&self, window: &str) -> Vec<String> {
+        let sessions = self.sessions.lock();
+        let mut ids: Vec<&String> = sessions
+            .iter()
+            .filter(|(_, s)| s.window == window)
+            .map(|(id, _)| id)
+            .collect();
+        // Insertion order is not preserved by HashMap, but session ids are
+        // allocated in creation order, so sorting restores the order the window
+        // laid its sessions out in.
+        ids.sort();
+        ids.into_iter().cloned().collect()
+    }
+
+    /// Kill every session owned by one window. Returns how many were killed.
+    ///
+    /// Called when a window really closes, which is the only moment its sessions
+    /// become genuinely unreachable. A reload must *not* call this: see
+    /// `ids_for_window`.
+    pub fn kill_for_window(&self, window: &str) -> usize {
+        let doomed: Vec<Session> = {
+            let mut sessions = self.sessions.lock();
+            let ids: Vec<String> = sessions
+                .iter()
+                .filter(|(_, s)| s.window == window)
+                .map(|(id, _)| id.clone())
+                .collect();
+            ids.iter().filter_map(|id| sessions.remove(id)).collect()
+        };
+
+        let count = doomed.len();
+        for mut session in doomed {
             let _ = session.child.kill();
             let _ = session.child.wait();
         }

@@ -16,7 +16,8 @@ import {
   type CommandAccent,
 } from '../lib/commandAccent'
 import { notifyComplete, shouldNotify } from '../lib/notify'
-import { PtySession } from '../term/session'
+import { createSessionIds, ownerOf, windowLabel, workspaceKey } from '../lib/windowIdentity'
+import { PtySession, type SessionCallbacks } from '../term/session'
 import { setKnownCommands, setRendererEnabled, type RendererId } from '../term/renderers'
 import type { Block } from '../term/types'
 
@@ -205,6 +206,8 @@ interface StoreState {
     pane?: PaneId,
     restore?: { cwd?: string; history?: string[] },
   ) => Promise<void>
+  /** Re-attach to a shell that outlived the page that spawned it. */
+  adoptSession: (id: string) => Promise<void>
   /** Kill a session's shell and drop it from its pane. */
   closeSession: (id: string) => Promise<void>
   activateSession: (pane: PaneId, index: number) => void
@@ -257,19 +260,97 @@ const toolPolls = new Map<string, number>()
  */
 const TOOL_POLL_MS = 500
 
-let sessionCounter = 0
 /**
- * Session id, unique for the lifetime of the *process* — not the webview.
+ * Session id, unique across the whole process — not just this webview.
  *
- * The native `PtyManager` keeps its session map across a webview reload, while
- * every module-level counter here resets to zero. A bare `s1` would therefore
- * collide with the shell the previous page load already registered, `pty_spawn`
- * would reject the id, and the new session would sit in the UI attached to
- * nothing — every command stuck on RUNNING. The random suffix makes a reloaded
- * page ask for ids the backend has never seen.
+ * The native `PtyManager` is one map keyed by id, shared by every window and
+ * kept across a reload, so two sources of collision have to be ruled out. Two
+ * *windows* counting independently would both claim `s1`; the window label in
+ * the id separates them. A *reloaded* page would replay the ids it used before,
+ * which is now correct rather than a collision: `pty_adopt` hands those same
+ * sessions back, and the page re-attaches to them instead of spawning.
+ *
+ * That is why the id is derived rather than random. It used to carry a random
+ * suffix precisely so a reloaded page could never name an existing session —
+ * the opposite of what re-attaching needs.
  */
-const nextSessionId = () =>
-  `s${++sessionCounter}-${Math.random().toString(36).slice(2, 8)}`
+const nextSessionId = createSessionIds()
+
+/**
+ * The store's side of a `PtySession`, for one session id.
+ *
+ * Shared by spawning and adopting: a re-attached session has to fold its output
+ * into the store exactly as a fresh one does, and duplicating this was how the
+ * two paths would quietly drift — an adopted session that stopped notifying, or
+ * stopped picking up accents, with nothing to point at.
+ */
+/** Zustand's setter, as handed to the store creator. */
+type StoreSet = (
+  partial:
+    | Partial<StoreState>
+    | ((state: StoreState) => Partial<StoreState> | StoreState),
+) => void
+
+function sessionCallbacks(set: StoreSet, id: string): SessionCallbacks {
+  return {
+    onBlocks: (blocks) => {
+      set((s) => {
+        const existing = s.sessions[id]
+        if (!existing) return s
+
+        // Notify when a slow command settles while the window is in the
+        // background. Comparing against the previous block list means this
+        // fires once, on the transition, not on every output chunk.
+        const last = blocks.at(-1)
+        const previous = existing.blocks.at(-1)
+        if (
+          last &&
+          previous?.id === last.id &&
+          previous.running &&
+          !last.running &&
+          shouldNotify(last, document.hasFocus())
+        ) {
+          void notifyComplete(last, existing.name)
+        }
+
+        // A matched command's colour is stamped onto its own block, so the
+        // header keeps it once the global accent reverts. Resolved here
+        // because this is where the rules live; the session layer has no
+        // knowledge of them.
+        // Tree words only describe what is running now, so they inform the
+        // running block and never a settled one — a finished block's colour
+        // must not be decided by whatever happens to be alive later.
+        const stamped = blocks.map((b) => {
+          if (b.accent !== undefined) return b
+          const accent = accentFor(
+            b.cmd,
+            s.settingsValues.commandAccents,
+            b.running ? existing.tools : undefined,
+          )
+          return accent ? { ...b, accent } : b
+        })
+        const sessions = { ...s.sessions, [id]: { ...existing, blocks: stamped } }
+        // A command starting or settling is what drives the accent, so this
+        // recomputes on the same transition the notification uses.
+        return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
+      })
+    },
+    onCwd: (newCwd) => {
+      set((s) => {
+        const existing = s.sessions[id]
+        if (!existing) return s
+        return { sessions: { ...s.sessions, [id]: { ...existing, cwd: newCwd } } }
+      })
+    },
+    onTakeover: (active) => {
+      set((s) => {
+        const existing = s.sessions[id]
+        if (!existing) return s
+        return { sessions: { ...s.sessions, [id]: { ...existing, takeover: active } } }
+      })
+    },
+  }
+}
 
 /**
  * Poll the session's process tree while a command is running.
@@ -366,12 +447,17 @@ export const useStore = create<StoreState>((set, get) => ({
   host: null,
 
   async init() {
-    // Reap shells left behind by a previous page load. `init` runs once per
-    // webview load, and a reload is the only way a second one happens — at which
-    // point the sessions this store described are gone but their shells are not.
-    // Killing them here, before anything spawns, is what keeps a reload from
-    // leaking a shell (and its PTY reader thread) on every cycle.
-    await invoke<number>('pty_kill_all').catch(() => 0)
+    // Sessions this window already owns, from a previous page load. `init` runs
+    // once per webview load, and a reload is the only way a second one happens
+    // — at which point the store that described these shells is gone but the
+    // shells themselves are still running and still owned by this window.
+    //
+    // They used to be killed here, because nothing recorded who owned what and
+    // reaping everything was the only way to avoid leaking a PTY per reload.
+    // Now they are adopted instead: the shell, its scrollback and whatever it is
+    // running all survive. A window that really closes is reaped natively, on
+    // the window-destroyed event, which is the case this can no longer see.
+    const orphans = await invoke<string[]>('pty_adopt').catch(() => [])
 
     const host = await invoke<HostInfo>('host_info')
 
@@ -390,14 +476,16 @@ export const useStore = create<StoreState>((set, get) => ({
         const parsed = JSON.parse(raw) as {
           settings?: Partial<Settings>
           profiles?: Profile[]
-          workspace?: PersistedWorkspace
-        }
+        } & Record<string, unknown>
         // Fields are copied one at a time rather than spread, so keys retired
         // from Settings (glow, scanlines) are dropped instead of being carried
         // back into the file on the next save.
         settingsValues = pickSettings(parsed.settings)
         if (Array.isArray(parsed.profiles)) profiles = parsed.profiles
-        if (parsed.workspace?.panes?.a) workspace = parsed.workspace
+        // Per-window key, so a second window restores its own layout rather
+        // than the main window's. See lib/windowIdentity.
+        const saved = parsed[workspaceKey()] as PersistedWorkspace | undefined
+        if (saved?.panes?.a) workspace = saved
       } catch {
         // A corrupt config falls back to defaults rather than blocking launch.
       }
@@ -421,6 +509,25 @@ export const useStore = create<StoreState>((set, get) => ({
     setRendererEnabled(settingsValues.renderers)
     applyTheme(settingsValues)
     set({ host, settingsValues, profiles })
+
+    // A reload: re-attach to the live shells rather than restoring the config's
+    // snapshot of them. This wins over `restoreOnLaunch` because the snapshot is
+    // a description of these same sessions written up to 180ms ago, while the
+    // sessions themselves are right there — still running, mid-command, with
+    // scrollback the config never held.
+    //
+    // Layout is not recovered here. The store that knew which pane each session
+    // sat in died with the page, and the native side tracks ownership per window
+    // rather than per pane, so everything lands in pane A in creation order. A
+    // reload is rare enough that losing a split is a fair trade for not losing a
+    // running command; recovering the layout would mean persisting the pane
+    // assignment on every session move.
+    if (orphans.length > 0) {
+      for (const id of orphans) {
+        await get().adoptSession(id)
+      }
+      return
+    }
 
     // Restore the previous workspace when the setting is on and there is one to
     // restore; otherwise open a single session from the default profile.
@@ -655,6 +762,66 @@ export const useStore = create<StoreState>((set, get) => ({
     persist()
   },
 
+  async adoptSession(id) {
+    const state = get()
+    if (state.sessions[id]) return
+
+    // The id was minted by this window before the reload, so its label is ours;
+    // anything else means the native side handed over a session belonging to
+    // another window, and attaching would point this UI at a stranger's shell.
+    const owner = ownerOf(id)
+    if (owner !== null && owner !== windowLabel) {
+      console.error(`trmnl: refusing to adopt ${id}, owned by ${owner}`)
+      return
+    }
+
+    // What the old store knew about this session died with the page. The shell
+    // is the authority on cwd and it re-announces on the next prompt, so an
+    // approximate starting point is enough; the rest is genuinely gone.
+    const cwd = state.host?.home ?? '~'
+    const session: Session = {
+      id,
+      name: 'shell',
+      host: 'local',
+      cwd,
+      branch: '',
+      shell: state.host?.shell ?? '',
+      cols: 120,
+      rows: 32,
+      blocks: [],
+      input: '',
+      ghost: '',
+      history: [],
+      historyIndex: null,
+      takeover: false,
+      tools: [],
+    }
+
+    set((s) => ({
+      sessions: { ...s.sessions, [id]: session },
+      panes: {
+        ...s.panes,
+        a: {
+          sessions: [...s.panes.a.sessions, id],
+          active: s.panes.a.sessions.length,
+        },
+      },
+    }))
+
+    const pty = new PtySession(id, cwd, sessionCallbacks(set, id), get().settingsValues.scrollbackCap)
+    ptys.set(id, pty)
+    startToolPoll(id)
+    await pty.attach(get().host?.hookVersion)
+
+    // Nudge the shell into redrawing its prompt, so an adopted session shows
+    // something rather than sitting blank until the user presses a key. A bare
+    // newline is the one input that is safe mid-command: it submits an empty
+    // line to an idle shell and is swallowed by anything already running.
+    await pty.write('\n').catch(() => {})
+
+    persist()
+  },
+
   async newSession(profileId, pane, restore) {
     const state = get()
     const targetPane = pane ?? state.focus
@@ -699,69 +866,7 @@ export const useStore = create<StoreState>((set, get) => ({
       },
     }))
 
-    const pty = new PtySession(
-      id,
-      cwd,
-      {
-        onBlocks: (blocks) => {
-          set((s) => {
-            const existing = s.sessions[id]
-            if (!existing) return s
-
-            // Notify when a slow command settles while the window is in the
-            // background. Comparing against the previous block list means this
-            // fires once, on the transition, not on every output chunk.
-            const last = blocks.at(-1)
-            const previous = existing.blocks.at(-1)
-            if (
-              last &&
-              previous?.id === last.id &&
-              previous.running &&
-              !last.running &&
-              shouldNotify(last, document.hasFocus())
-            ) {
-              void notifyComplete(last, existing.name)
-            }
-
-            // A matched command's colour is stamped onto its own block, so the
-            // header keeps it once the global accent reverts. Resolved here
-            // because this is where the rules live; the session layer has no
-            // knowledge of them.
-            // Tree words only describe what is running now, so they inform the
-            // running block and never a settled one — a finished block's colour
-            // must not be decided by whatever happens to be alive later.
-            const stamped = blocks.map((b) => {
-              if (b.accent !== undefined) return b
-              const accent = accentFor(
-                b.cmd,
-                s.settingsValues.commandAccents,
-                b.running ? existing.tools : undefined,
-              )
-              return accent ? { ...b, accent } : b
-            })
-            const sessions = { ...s.sessions, [id]: { ...existing, blocks: stamped } }
-            // A command starting or settling is what drives the accent, so this
-            // recomputes on the same transition the notification uses.
-            return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
-          })
-        },
-        onCwd: (newCwd) => {
-          set((s) => {
-            const existing = s.sessions[id]
-            if (!existing) return s
-            return { sessions: { ...s.sessions, [id]: { ...existing, cwd: newCwd } } }
-          })
-        },
-        onTakeover: (active) => {
-          set((s) => {
-            const existing = s.sessions[id]
-            if (!existing) return s
-            return { sessions: { ...s.sessions, [id]: { ...existing, takeover: active } } }
-          })
-        },
-      },
-      get().settingsValues.scrollbackCap,
-    )
+    const pty = new PtySession(id, cwd, sessionCallbacks(set, id), get().settingsValues.scrollbackCap)
     ptys.set(id, pty)
     startToolPoll(id)
 
@@ -1187,9 +1292,29 @@ function persist(): void {
         }
       : undefined
 
-    void invoke('config_save', {
-      contents: JSON.stringify({ settings: settingsValues, profiles, workspace }, null, 2),
-    }).catch((err) => console.error('trmnl: could not save config', err))
+    // Read-modify-write, keyed per window. Settings and profiles are shared, so
+    // a blind overwrite would let one window's stale copy clobber a change made
+    // in another — and each window's workspace lives under its own key, so two
+    // windows saving layouts no longer race to be last.
+    void invoke<string | null>('config_load')
+      .catch(() => null)
+      .then((raw) => {
+        let file: Record<string, unknown> = {}
+        if (raw) {
+          try {
+            file = JSON.parse(raw) as Record<string, unknown>
+          } catch {
+            // Corrupt on disk; this write replaces it wholesale.
+          }
+        }
+        file.settings = settingsValues
+        file.profiles = profiles
+        if (workspace) file[workspaceKey()] = workspace
+        else delete file[workspaceKey()]
+
+        return invoke('config_save', { contents: JSON.stringify(file, null, 2) })
+      })
+      .catch((err) => console.error('trmnl: could not save config', err))
   }, 180)
 }
 

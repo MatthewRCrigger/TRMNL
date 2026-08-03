@@ -73,13 +73,14 @@ fn host_info(state: State<'_, AppState>) -> HostInfo {
 #[tauri::command]
 fn pty_spawn(
     app: AppHandle,
+    window: tauri::Window,
     state: State<'_, AppState>,
     id: String,
     options: SpawnOptions,
 ) -> Result<(), String> {
     state
         .pty
-        .spawn(&app, id, options)
+        .spawn(&app, window.label(), id, options)
         .map_err(|e| e.to_string())
 }
 
@@ -111,14 +112,22 @@ fn pty_exists(state: State<'_, AppState>, id: String) -> bool {
     state.pty.exists(&id)
 }
 
-/// Kill every live session. Called once by a page as it boots.
+/// Ids of the sessions this window already owns, oldest first.
 ///
-/// The frontend's session table lives in the webview, so a reload discards it
-/// while these shells keep running — unreachable, still holding PTYs. Reaping
-/// them at boot is what keeps a reload from leaking a shell per cycle.
+/// Called once by a page as it boots. A non-empty result means the page is a
+/// reload rather than a fresh window: the shells it described are still running
+/// and still owned by this window, so the store re-attaches to them instead of
+/// spawning replacements. This is what replaced the old `pty_kill_all`, which
+/// reaped every session in the process and so could not survive a second window.
 #[tauri::command]
-fn pty_kill_all(state: State<'_, AppState>) -> usize {
-    state.pty.kill_all()
+fn pty_adopt(window: tauri::Window, state: State<'_, AppState>) -> Vec<String> {
+    state.pty.ids_for_window(window.label())
+}
+
+/// Kill every session owned by a window, when that window really closes.
+#[tauri::command]
+fn pty_kill_window(window: tauri::Window, state: State<'_, AppState>) -> usize {
+    state.pty.kill_for_window(window.label())
 }
 
 #[tauri::command]
@@ -207,6 +216,23 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .menu(menu::build)
         .on_menu_event(|app, event| menu::handle_event(app, event.id().as_ref()))
+        // A closing window takes its shells with it. Nothing else reaps them:
+        // `pty_adopt` deliberately keeps sessions alive across a reload, so
+        // without this a closed window would leak every PTY it owned — the very
+        // leak the old `kill_all` existed to prevent, now scoped to one window.
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Some(state) = window.app_handle().try_state::<AppState>() {
+                    let killed = state.pty.kill_for_window(window.label());
+                    if killed > 0 {
+                        eprintln!(
+                            "trmnl: reaped {killed} session(s) with window '{}'",
+                            window.label()
+                        );
+                    }
+                }
+            }
+        })
         .setup(|app| {
             // Install (or refresh) the shell-integration scripts on every launch so
             // an upgraded TRMNL always ships current hooks.
@@ -231,7 +257,8 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_exists,
-            pty_kill_all,
+            pty_adopt,
+            pty_kill_window,
             pty_tools,
             sample_telemetry,
             detect_dir,
