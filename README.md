@@ -89,7 +89,9 @@ npm install
 npm run app
 ```
 
-`npm run app:build` produces a distributable `.app` and `.dmg`.
+`npm run app:build` produces an unsigned `.app` and `.dmg` — fine locally, but
+Gatekeeper blocks it on any other Mac. For a distributable build see
+[Signing and notarization](#signing-and-notarization).
 
 Requires the Rust toolchain. It was installed here with `--no-modify-path`, so
 `$HOME/.cargo/bin` may need to be on `PATH`:
@@ -304,6 +306,44 @@ that lied about what they did:
 The **keybinding editor** is still unbuilt, and its `EDIT` affordance is
 deliberately inert and labelled as such — a visible control that does nothing
 when clicked is worse than one that says it isn't ready.
+
+## Signing and notarization
+
+`npm run app:release` builds, signs, notarizes, and staples both artifacts, then
+verifies them. Credentials come from a `notarytool` keychain profile:
+
+```bash
+xcrun notarytool store-credentials TRMNL-notary \
+  --apple-id "you@example.com" --team-id "QY69D89784"
+```
+
+```bash
+NOTARY_PROFILE=TRMNL-notary npm run app:release
+```
+
+`APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` work too, where `APPLE_PASSWORD`
+is an app-specific password from appleid.apple.com — a normal Apple ID password
+is rejected.
+
+Two things worth knowing:
+
+- **Tauri does not notarize the `.dmg`.** It notarizes and staples the `.app`,
+  then builds the disk image afterward, so the `.dmg` ships un-notarized and is
+  rejected on download. `release.sh` exists to submit and staple it separately.
+- **Hardened runtime is required for notarization**, and `entitlements.plist`
+  carries the exceptions a terminal needs — JIT for the WebView, plus
+  `disable-library-validation` and `allow-dyld-environment-variables`, because
+  profile env vars let a user inject `DYLD_*` into spawned shells. Removing
+  those breaks shell spawning only in signed builds, never in `tauri dev`.
+
+Verify a build with:
+
+```bash
+spctl -a -vvv -t install src-tauri/target/release/bundle/macos/TRMNL.app
+```
+
+`accepted` with `source=Notarized Developer ID` is the goal;
+`source=Unnotarized Developer ID` means signing worked but notarization didn't.
 
 ## Security note
 
