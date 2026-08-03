@@ -21,13 +21,15 @@ interface Detection {
 }
 
 interface Props {
+  /** True once the session has run something; collapses the cold-start sections. */
+  started?: boolean
   session: Session
   host: HostInfo | null
   compact: boolean
   onRun: (cmd: string) => void
 }
 
-export function Welcome({ session, host, compact, onRun }: Props) {
+export function Welcome({ session, host, compact, started = false, onRun }: Props) {
   const [detection, setDetection] = useState<Detection | null>(null)
 
   useEffect(() => {
@@ -45,7 +47,7 @@ export function Welcome({ session, host, compact, onRun }: Props) {
   const recent = [...session.history].reverse().slice(0, 3)
 
   return (
-    <div className="welcome" style={{ maxWidth: compact ? 520 : 560 }}>
+    <div className="welcome" data-compact={compact} data-started={started}>
       <div className="welcome__mark">
         <span className="welcome__word">TRMNL</span>
         <span className="welcome__ver">
@@ -75,7 +77,10 @@ export function Welcome({ session, host, compact, onRun }: Props) {
         <span className="welcome__val">{detection?.stack || '…'}</span>
       </div>
 
-      {detection && detection.suggestions.length > 0 && (
+      {/* Suggestions, recents and the key hints are all cold-start scaffolding.
+          Once the session has real history they would be stale noise sitting above
+          it, so they drop away and the masthead keeps only the identity grid. */}
+      {!started && detection && detection.suggestions.length > 0 && (
         <section className="welcome__section">
           <div className="welcome__head">
             <span className="micro">SUGGESTED</span>
@@ -98,7 +103,7 @@ export function Welcome({ session, host, compact, onRun }: Props) {
         </section>
       )}
 
-      {recent.length > 0 && (
+      {!started && recent.length > 0 && (
         <section className="welcome__section">
           <div className="welcome__head">
             <span className="micro">RECENT</span>
@@ -118,6 +123,7 @@ export function Welcome({ session, host, compact, onRun }: Props) {
         </section>
       )}
 
+      {!started && (
       <div className="welcome__hints">
         <span>
           <span className="welcome__hintkey">⌘K</span> PALETTE
@@ -130,6 +136,7 @@ export function Welcome({ session, host, compact, onRun }: Props) {
         </span>
         <span className="welcome__eol">END OF LINE</span>
       </div>
+      )}
     </div>
   )
 }

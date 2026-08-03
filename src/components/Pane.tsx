@@ -136,26 +136,29 @@ export function Pane({ pane, showClose }: Props) {
 
       <div className="pane__body" ref={bodyRef}>
         <div className="pane__stream" ref={scrollRef} onScroll={onScroll}>
-          {session.blocks.length === 0 ? (
-            <Welcome
-              session={session}
-              host={host}
-              compact={pane === 'b'}
-              onRun={(cmd) => void runCommand(cmd, pane)}
+          {/* The masthead stays at the top of the stream for the life of the
+              session rather than being swapped out by the first command, so
+              scrolling back always returns to where the session started. Its
+              suggestions collapse away once there is history — they are a
+              cold-start affordance, not permanent chrome. */}
+          <Welcome
+            session={session}
+            host={host}
+            compact={pane === 'b'}
+            started={session.blocks.length > 0}
+            onRun={(cmd) => void runCommand(cmd, pane)}
+          />
+          {session.blocks.map((block, i) => (
+            <Block
+              key={block.id}
+              block={block}
+              foldThreshold={foldThreshold}
+              isLatest={i === session.blocks.length - 1}
+              onCancel={() => void cancelCurrent(sessionId)}
+              onRerun={(cmd) => void runCommand(cmd, pane)}
+              onToggleFold={() => toggleBlockFold(sessionId, block.id)}
             />
-          ) : (
-            session.blocks.map((block, i) => (
-              <Block
-                key={block.id}
-                block={block}
-                foldThreshold={foldThreshold}
-                isLatest={i === session.blocks.length - 1}
-                onCancel={() => void cancelCurrent(sessionId)}
-                onRerun={(cmd) => void runCommand(cmd, pane)}
-                onToggleFold={() => toggleBlockFold(sessionId, block.id)}
-              />
-            ))
-          )}
+          ))}
         </div>
 
         {showJump && !session.takeover && (

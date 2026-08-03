@@ -1294,6 +1294,14 @@
   background: color-mix(in oklch, var(--ac) 1.5%, transparent);
 }
 
+/* Once the session has history the masthead is a header for the stream below it,
+ * so it needs the same gap the blocks use between themselves. It also loses its
+ * prompts, which leaves it short enough not to cost much scrollback. */
+.welcome[data-started='true'] {
+  margin-bottom: 17px;
+  padding-bottom: 14px;
+}
+
 .welcome__mark {
   display: flex;
   align-items: baseline;
