@@ -174,7 +174,12 @@ function parseOsc(body: string): Osc133Event | null {
 
 /** ANSI SGR sequences, plus the control sequences we discard. */
 const SGR = /\x1b\[([0-9;]*)m/g
-const CSI_OTHER = /\x1b\[[0-9;?]*[A-Za-z]/g
+/* A CSI sequence is ESC [ , then parameter bytes, then intermediates, then a
+ * final byte. ECMA-48 allows `<=>?` as private-parameter prefixes and `!"#$%&'*+,-./`
+ * as intermediates; omitting them left sequences like `\x1b[>4m` (modifyOtherKeys)
+ * and `\x1b[<u` (Kitty keyboard pop) visible as text. Interactive programs emit
+ * exactly those on exit to restore terminal modes. */
+const CSI_OTHER = /\x1b\[[0-9;:<=>?]*[ -/]*[@-~]/g
 const OTHER_ESC = /\x1b[()][0-9A-Za-z]|\x1b[=>]/g
 
 /**

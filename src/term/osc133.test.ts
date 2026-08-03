@@ -130,6 +130,31 @@ describe('ansiToLines', () => {
     expect(ansiToLines('progress\x1b[2K\x1b[1G')).toEqual([{ text: 'progress', tone: 'txt' }])
   })
 
+  it('strips CSI sequences with private-parameter prefixes', () => {
+    // An exiting interactive program restores terminal modes with sequences whose
+    // parameter bytes are `>` or `<`. A character class of only [0-9;?] left them
+    // visible, which is how `[>4m[<u` ended up in the block stream.
+    expect(ansiToLines('done\x1b[>4m\x1b[<u')).toEqual([{ text: 'done', tone: 'txt' }])
+  })
+
+  it('strips DEC private mode sets and resets', () => {
+    expect(
+      ansiToLines('x\x1b[?7727h\x1b[?78h\x1b[?1049l\x1b[?2004l'),
+    ).toEqual([{ text: 'x', tone: 'txt' }])
+  })
+
+  it('strips CSI sequences carrying intermediate bytes', () => {
+    // ESC [ 4 SP q — set cursor style. The intermediate is a space.
+    expect(ansiToLines('a\x1b[4 qb')).toEqual([{ text: 'ab', tone: 'txt' }])
+  })
+
+  it('leaves ordinary text containing < and > alone', () => {
+    // The widened class must not start eating comparison operators.
+    expect(ansiToLines('if [ 4 > 2 ]; then')).toEqual([
+      { text: 'if [ 4 > 2 ]; then', tone: 'txt' },
+    ])
+  })
+
   it('resolves a carriage return as an overwrite, not a deletion', () => {
     // A progress bar redrawing in place should show only its final state.
     expect(ansiToLines('10%\r50%\r100%')).toEqual([{ text: '100%', tone: 'txt' }])

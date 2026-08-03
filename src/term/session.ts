@@ -76,6 +76,9 @@ export class PtySession {
 
   /** Monotonic per-session block ordinal, shown in the block header. */
   private seq = 0
+  /** Set after an interactive block: its content is final, so trailing terminal-
+   *  mode teardown is discarded rather than appended. Cleared at the next block. */
+  private sealed = false
   /** True once we have seen an OSC 133 marker; until then we assume no hooks. */
   private integrated = false
   /**
@@ -354,6 +357,13 @@ export class PtySession {
     this.takeoverBacklog = ''
     this.parser.reset()
     this.repaint.reset()
+    // An exiting program restores the terminal modes it changed — modifyOtherKeys,
+    // the Kitty keyboard stack, bracketed paste, DEC private modes. Those arrive
+    // after the alt-screen is already released, so they would otherwise land in
+    // the block as text appended to the `interactive session` marker. The marker
+    // is the whole of what this block should say, so further output is dropped
+    // until the shell's next prompt reopens a block.
+    this.sealed = this.current?.interactive === true
     this.cbs.onTakeover?.(false)
   }
 
@@ -465,6 +475,10 @@ export class PtySession {
     // user typed. We render our own prompt line, so that is dropped.
     if (this.inPrompt && this.integrated) return
 
+    // An interactive block says only `interactive session`; the mode-restore
+    // sequences that follow the program's exit are not content.
+    if (this.sealed) return
+
     if (!this.current) {
       // Output arriving with no open block is the shell drawing its startup
       // banner and first prompt. Swallowing it keeps the welcome state intact;
@@ -500,6 +514,7 @@ export class PtySession {
 
   private openBlock(cmd: string): void {
     this.clearLiveTimer()
+    this.sealed = false
     // Repaint signals are per-command; carrying them over would let a busy
     // command push the next one into a takeover it never earned.
     this.repaint.reset()
