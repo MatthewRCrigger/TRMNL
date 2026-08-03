@@ -13,6 +13,7 @@ import { Rail } from './components/Rail'
 import { Search } from './components/Search'
 import { Settings } from './components/Settings'
 import { TitleBar } from './components/TitleBar'
+import { listenForMenuEvents } from './lib/menuEvents'
 import { useStore } from './state/store'
 
 /**
@@ -64,6 +65,10 @@ export function App() {
 
   useGlobalKeys()
   useWindowTitle()
+
+  // The native menu is where Settings / New Session / Close Session now come
+  // from, including their chords — see lib/menuEvents.ts.
+  useEffect(() => listenForMenuEvents(), [])
 
   /* --- divider drag ------------------------------------------------------- */
 
@@ -410,27 +415,9 @@ function useGlobalKeys(): void {
           event.preventDefault()
           store.toggleSplit(event.shiftKey ? 'col' : 'row')
           break
-        case 't':
-          event.preventDefault()
-          void store.newSession()
-          break
-        case 'w': {
-          event.preventDefault()
-          // Split: close the pane. Solo: close the session — otherwise ⌘W would
-          // do nothing at all in the common case.
-          if (store.split) {
-            store.closePane()
-          } else {
-            const id = store.activeSessionId()
-            if (id) void store.closeSession(id)
-          }
-          break
-        }
-        case ',':
-          event.preventDefault()
-          if (store.settings.open) store.closeSettings()
-          else store.openSettings()
-          break
+        // ⌘T, ⌘W and ⌘, are absent on purpose: the native menu declares them as
+        // key equivalents, so AppKit performs the menu item and this handler
+        // never sees the chord. The behaviour lives in lib/menuEvents.ts.
         case 'arrowleft':
           if (event.altKey) {
             event.preventDefault()

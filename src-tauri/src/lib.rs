@@ -5,6 +5,7 @@
 
 mod config;
 mod detect;
+mod menu;
 mod proctree;
 mod pty;
 mod shell_integration;
@@ -204,6 +205,8 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .menu(menu::build)
+        .on_menu_event(|app, event| menu::handle_event(app, event.id().as_ref()))
         .setup(|app| {
             // Install (or refresh) the shell-integration scripts on every launch so
             // an upgraded TRMNL always ships current hooks.
