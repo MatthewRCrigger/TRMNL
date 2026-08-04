@@ -817,6 +817,7 @@ const BINDINGS: [string, string][] = [
   ['⌘⌥←/→', 'Focus pane'],
   ['⌘⇧F', 'Search scrollback'],
   ['⌘[ / ⌘]', 'Previous / next block'],
+  ['⌘⇧M', 'Maximize / restore focused pane'],
 ]
 
 function KeybindingsPane() {

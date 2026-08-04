@@ -29,6 +29,7 @@ export function App() {
   const splitDir = useStore((s) => s.splitDir)
   const paneSize = useStore((s) => s.paneSize)
   const setPaneSize = useStore((s) => s.setPaneSize)
+  const paneMaximized = useStore((s) => s.paneMaximized)
   const focus = useStore((s) => s.focus)
   const setFocus = useStore((s) => s.setFocus)
   const syncRailForWidth = useStore((s) => s.syncRailForWidth)
@@ -128,35 +129,47 @@ export function App() {
           ref={framRef}
           style={{ flexDirection: splitDir === 'row' ? 'row' : 'column' }}
         >
-          <div
-            className="panes__slot"
-            style={split ? { flex: `0 0 ${paneSize}%` } : { flex: '1 1 auto' }}
-          >
-            <Pane pane="a" showClose={false} />
-          </div>
+          {/* Maximized hides the unfocused pane's DOM entirely rather than
+              just collapsing its flex box — its session keeps running in the
+              background, but an off-screen xterm.js grid (for any takeover
+              program) is not worth keeping laid out. */}
+          {(!split || !paneMaximized || focus === 'a') && (
+            <div
+              className="panes__slot"
+              style={
+                !split
+                  ? { flex: '1 1 auto' }
+                  : paneMaximized
+                    ? { flex: '1 1 auto' }
+                    : { flex: `0 0 ${paneSize}%` }
+              }
+            >
+              <Pane pane="a" showClose={false} />
+            </div>
+          )}
 
-          {split && (
-            <>
-              <div
-                className="divider"
-                data-dir={splitDir}
-                data-dragging={dragging.current}
-                onPointerDown={onDividerDown}
-                onPointerMove={onDividerMove}
-                onPointerUp={onDividerUp}
-                onPointerCancel={onDividerUp}
-                role="separator"
-                aria-orientation={splitDir === 'row' ? 'vertical' : 'horizontal'}
-                aria-label="Resize panes"
-              >
-                <DividerTrace />
-                <span className="divider__grip" />
-              </div>
+          {split && !paneMaximized && (
+            <div
+              className="divider"
+              data-dir={splitDir}
+              data-dragging={dragging.current}
+              onPointerDown={onDividerDown}
+              onPointerMove={onDividerMove}
+              onPointerUp={onDividerUp}
+              onPointerCancel={onDividerUp}
+              role="separator"
+              aria-orientation={splitDir === 'row' ? 'vertical' : 'horizontal'}
+              aria-label="Resize panes"
+            >
+              <DividerTrace />
+              <span className="divider__grip" />
+            </div>
+          )}
 
-              <div className="panes__slot" style={{ flex: 1 }}>
-                <Pane pane="b" showClose />
-              </div>
-            </>
+          {split && (!paneMaximized || focus === 'b') && (
+            <div className="panes__slot" style={{ flex: paneMaximized ? '1 1 auto' : 1 }}>
+              <Pane pane="b" showClose />
+            </div>
           )}
         </div>
       </div>
@@ -419,6 +432,13 @@ function useGlobalKeys(): void {
         case 'd':
           event.preventDefault()
           store.toggleSplit(event.shiftKey ? 'col' : 'row')
+          break
+        case 'm':
+          // ⌘⇧M only; plain ⌘M is left to the OS (minimize).
+          if (event.shiftKey) {
+            event.preventDefault()
+            store.toggleMaximizePane()
+          }
           break
         // ⌘T, ⌘W and ⌘, are absent on purpose: the native menu declares them as
         // key equivalents, so AppKit performs the menu item and this handler
