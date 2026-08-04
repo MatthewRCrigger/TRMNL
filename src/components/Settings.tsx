@@ -3,6 +3,8 @@
  * Settings save immediately; there is no Save button and there should not be one.
  */
 
+import { open } from '@tauri-apps/plugin-dialog'
+
 import { isValidColor, type CommandAccent } from '../lib/commandAccent'
 import { IDENTITIES, useStore, type Density, type GhostSource, type Profile, type SettingsTab } from '../state/store'
 import type { RendererId } from '../term/renderers'
@@ -84,6 +86,44 @@ export function Settings() {
 
 /* --- Profiles -------------------------------------------------------------- */
 
+/**
+ * Pick a working directory with the system folder panel.
+ *
+ * Opened at the profile's current directory so the panel starts where the user
+ * is already pointing rather than at the last place macOS happened to remember.
+ * A `~` path has to be expanded first — the panel takes a real filesystem path
+ * and silently ignores one it cannot resolve, which would look like the setting
+ * being ignored.
+ *
+ * The chosen path is folded back to `~` on the way in, because that is the form
+ * the rest of the app stores and displays: a profile that reads `~/src/thing`
+ * before browsing should not become `/Users/you/src/thing` afterwards.
+ *
+ * Cancelling returns null and changes nothing, which is the whole contract —
+ * there is no error case worth surfacing beyond that.
+ */
+async function browseForCwd(current: string, apply: (cwd: string) => void): Promise<void> {
+  const home = useStore.getState().host?.home ?? ''
+  const expand = (p: string) =>
+    home && p.startsWith('~') ? `${home}${p.slice(1)}` : p
+
+  try {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: expand(current) || home || undefined,
+      title: 'Choose a working directory',
+    })
+    if (typeof picked !== 'string') return
+
+    apply(home && picked.startsWith(home) ? `~${picked.slice(home.length)}` : picked)
+  } catch (err) {
+    // A denied capability or a panel that cannot open is worth a line, but not
+    // worth interrupting the settings pane over.
+    console.error('trmnl: could not open the folder panel', err)
+  }
+}
+
 function ProfilesPane() {
   const profiles = useStore((s) => s.profiles)
   const selectedId = useStore((s) => s.settings.selectedProfile)
@@ -163,12 +203,26 @@ function ProfilesPane() {
             />
 
             <label className="form__label micro" htmlFor="p-cwd">WORKING DIR</label>
-            <input
-              className="form__input"
-              id="p-cwd"
-              value={selected.cwd}
-              onChange={(e) => patch({ cwd: e.target.value })}
-            />
+            {/* The field stays editable rather than becoming a read-only target
+                for the picker: typing is still the fastest way in when the path
+                is known, and `~` cannot be reached through a folder panel at
+                all. Browse is for the case the panel is better at — finding a
+                directory you would otherwise have to remember the path to. */}
+            <div className="form__row">
+              <input
+                className="form__input"
+                id="p-cwd"
+                value={selected.cwd}
+                onChange={(e) => patch({ cwd: e.target.value })}
+              />
+              <button
+                className="btn"
+                type="button"
+                onClick={() => void browseForCwd(selected.cwd, (cwd) => patch({ cwd }))}
+              >
+                BROWSE…
+              </button>
+            </div>
 
             <label className="form__label micro" htmlFor="p-shell">SHELL</label>
             <input

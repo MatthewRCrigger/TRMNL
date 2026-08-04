@@ -215,6 +215,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .menu(menu::build)
         .on_menu_event(|app, event| menu::handle_event(app, event.id().as_ref()))
         // A closing window takes its shells with it. Nothing else reaps them:

@@ -539,32 +539,37 @@ export const useStore = create<StoreState>((set, get) => ({
     // Restore the previous workspace when the setting is on and there is one to
     // restore; otherwise open a single session from the default profile.
     if (settingsValues.restoreOnLaunch && workspace && workspace.panes.a.sessions.length > 0) {
+      // A window opens solo. Splitting is a deliberate act — ⌘D — and restoring
+      // one means a split made once is inherited by every launch afterwards,
+      // with no obvious way to tell it apart from the app simply opening that
+      // way. The direction is still restored, so the next ⌘D splits the way the
+      // user last chose; only the split itself has to be asked for again.
       set({
-        split: workspace.split,
+        split: false,
         splitDir: workspace.splitDir,
         paneSize: workspace.paneSize,
         railOpen: workspace.railOpen,
       })
 
-      for (const pane of ['a', 'b'] as PaneId[]) {
-        const saved = workspace.panes[pane]
-        if (pane === 'b' && !workspace.split) continue
-        for (const entry of saved.sessions) {
-          await get().newSession(entry.profileId, pane, {
-            cwd: entry.cwd,
-            history: entry.history,
-          })
-        }
-        set((s) => ({
-          panes: {
-            ...s.panes,
-            [pane]: {
-              ...s.panes[pane],
-              active: Math.min(saved.active, Math.max(0, saved.sessions.length - 1)),
-            },
-          },
-        }))
+      // Pane A only. Pane B is not visible in a solo window, so restoring its
+      // sessions would spawn shells into a pane with nothing rendering them —
+      // live PTYs the user cannot see, reach or close.
+      const saved = workspace.panes.a
+      for (const entry of saved.sessions) {
+        await get().newSession(entry.profileId, 'a', {
+          cwd: entry.cwd,
+          history: entry.history,
+        })
       }
+      set((s) => ({
+        panes: {
+          ...s.panes,
+          a: {
+            ...s.panes.a,
+            active: Math.min(saved.active, Math.max(0, saved.sessions.length - 1)),
+          },
+        },
+      }))
       return
     }
 

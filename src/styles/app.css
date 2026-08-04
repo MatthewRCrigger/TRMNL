@@ -1980,6 +1980,13 @@
   transition: border-color 0.16s;
 }
 
+/* An input paired with a button, occupying the form grid's value column. The
+   input flexes and the button holds its width, so a long path scrolls inside
+   the field rather than squeezing the button to nothing. */
+.form__row { display: flex; gap: 9px; align-items: stretch; min-width: 0; }
+.form__row .form__input { flex: 1; min-width: 0; }
+.form__row .btn { flex: none; white-space: nowrap; }
+
 .form__input:focus { border-color: var(--bd); }
 .form__input--accent { color: var(--ac); }
 .form__input::placeholder { color: var(--fgdd); }
