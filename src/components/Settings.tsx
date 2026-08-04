@@ -46,7 +46,7 @@ export function Settings() {
           </span>
           <span className="rule" />
           <button
-            className="settings__close"
+            className="settings__close is-btn"
             onClick={closeSettings}
             type="button"
             aria-label="Close settings"
@@ -264,7 +264,7 @@ function ProfilesPane() {
                 onChange={(e) => patch({ cwd: e.target.value })}
               />
               <button
-                className="btn"
+                className="btn is-btn"
                 type="button"
                 onClick={() => void browseForCwd(selected, patch)}
               >
@@ -332,7 +332,7 @@ function ProfilesPane() {
                   aria-label="Variable value"
                 />
                 <button
-                  className="env__del"
+                  className="env__del is-btn is-btn--danger"
                   onClick={() => patch({ env: selected.env.filter((_, j) => j !== i) })}
                   type="button"
                   aria-label="Remove variable"
@@ -361,7 +361,7 @@ function ProfilesPane() {
 
           <div className="profiles__actions">
             <button
-              className="btn btn--primary"
+              className="btn btn--primary is-btn"
               onClick={() => {
                 closeSettings()
                 void newSession(selected.id)
@@ -371,7 +371,7 @@ function ProfilesPane() {
               LAUNCH SESSION →
             </button>
             <button
-              className="btn"
+              className="btn is-btn"
               data-lit={selected.isDefault}
               onClick={() => setDefaultProfile(selected.id)}
               type="button"
@@ -379,7 +379,7 @@ function ProfilesPane() {
               {selected.isDefault ? '◆ DEFAULT PROFILE' : 'SET AS DEFAULT'}
             </button>
             <button
-              className="btn"
+              className="btn is-btn"
               onClick={() =>
                 upsertProfile({
                   ...selected,
@@ -394,7 +394,7 @@ function ProfilesPane() {
             </button>
             <span className="rule" />
             <button
-              className="btn btn--danger"
+              className="btn is-btn is-btn--danger"
               onClick={() => deleteProfile(selected.id)}
               type="button"
             >
@@ -661,7 +661,7 @@ function CommandColorsSection() {
                 label={`Enable ${rule.label || rule.match || 'rule'}`}
               />
               <button
-                className="ccolors__del"
+                className="ccolors__del is-btn is-btn--danger"
                 onClick={() =>
                   updateSettings({ commandAccents: rules.filter((_, j) => j !== i) })
                 }

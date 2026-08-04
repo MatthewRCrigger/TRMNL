@@ -227,7 +227,7 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
           )}
         </span>
         <button
-          className="rail__close"
+          className="rail__close is-btn is-btn--danger"
           onClick={(e) => {
             // Otherwise the row's own click would re-activate what we just closed.
             e.stopPropagation()

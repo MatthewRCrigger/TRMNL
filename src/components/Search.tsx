@@ -99,7 +99,7 @@ export function Search() {
           {query ? `${hits.length === 0 ? 0 : activeIndex + 1}/${hits.length}` : '—'}
         </span>
         <button
-          className="search__step"
+          className="search__step is-btn"
           onClick={() => moveSearchSelection(-1, hits.length)}
           disabled={hits.length === 0}
           aria-label="Previous match"
@@ -108,7 +108,7 @@ export function Search() {
           ↑
         </button>
         <button
-          className="search__step"
+          className="search__step is-btn"
           onClick={() => moveSearchSelection(1, hits.length)}
           disabled={hits.length === 0}
           aria-label="Next match"
@@ -116,7 +116,7 @@ export function Search() {
         >
           ↓
         </button>
-        <button className="search__close" onClick={closeSearch} aria-label="Close search" type="button">
+        <button className="search__close is-btn" onClick={closeSearch} aria-label="Close search" type="button">
           ✕
         </button>
       </div>
