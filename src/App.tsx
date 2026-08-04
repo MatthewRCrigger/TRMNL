@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { formatWindowTitle } from './lib/windowTitle'
+import { formatChord, resolveKeybindings } from './lib/keybindings'
 import { Appearance } from './components/Appearance'
 import { Boot } from './components/Boot'
 import { ContextMenu } from './components/ContextMenu'
@@ -372,12 +373,20 @@ function useWindowTitle(): void {
   }, [])
 }
 
-/** Global chords. Esc closes in priority order: settings → appearance → palette → search. */
+/**
+ * Global chords. Esc closes in priority order: settings → appearance → palette
+ * → search — neither remappable nor part of the resolved keymap below.
+ *
+ * ⌘T, ⌘W and ⌘, are absent on purpose: the native menu declares them as key
+ * equivalents, so AppKit performs the menu item and this handler never sees
+ * the chord. The behaviour lives in lib/menuEvents.ts, and they are not part
+ * of the remappable set in lib/keybindings.ts for the same reason — see that
+ * module's header comment.
+ */
 function useGlobalKeys(): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const store = useStore.getState()
-      const meta = event.metaKey
 
       if (event.key === 'Escape') {
         // Priority order: settings → appearance → palette → search.
@@ -397,64 +406,61 @@ function useGlobalKeys(): void {
         return
       }
 
-      if (!meta) {
-        // ⌃L clears the buffer.
-        if (event.ctrlKey && event.key.toLowerCase() === 'l') {
+      const chord = formatChord(event)
+      if (chord === null) return // A bare modifier keypress, not a complete chord.
+
+      const bindings = resolveKeybindings(store.settingsValues.keybindings)
+
+      switch (chord) {
+        case bindings.palette:
+          event.preventDefault()
+          if (store.palette.open) store.closePalette()
+          else store.openPalette()
+          break
+        case bindings.search:
+          event.preventDefault()
+          if (store.search.open) store.closeSearch()
+          else store.openSearch()
+          break
+        case bindings['prev-block']:
+          // ⌘[ / ⌘] step between command blocks — the payoff of the block model.
+          event.preventDefault()
+          jumpBlock(-1)
+          break
+        case bindings['next-block']:
+          event.preventDefault()
+          jumpBlock(1)
+          break
+        case bindings['split-right']:
+          event.preventDefault()
+          store.toggleSplit('row')
+          break
+        case bindings['split-down']:
+          event.preventDefault()
+          store.toggleSplit('col')
+          break
+        case bindings['maximize-pane']:
+          event.preventDefault()
+          store.toggleMaximizePane()
+          break
+        case bindings['focus-left']:
+          event.preventDefault()
+          store.setFocus('a')
+          break
+        case bindings['focus-right']:
+          if (store.split) {
+            event.preventDefault()
+            store.setFocus('b')
+          }
+          break
+        case bindings['clear-buffer']: {
           const id = store.activeSessionId()
           if (id) {
             store.clearBuffer(id)
             event.preventDefault()
           }
+          break
         }
-        return
-      }
-
-      switch (event.key.toLowerCase()) {
-        case 'k':
-          event.preventDefault()
-          if (store.palette.open) store.closePalette()
-          else store.openPalette()
-          break
-        case 'f':
-          // ⌘⇧F only; plain ⌘F is left to the webview.
-          if (event.shiftKey) {
-            event.preventDefault()
-            if (store.search.open) store.closeSearch()
-            else store.openSearch()
-          }
-          break
-        case '[':
-        case ']':
-          // ⌘[ / ⌘] step between command blocks — the payoff of the block model.
-          event.preventDefault()
-          jumpBlock(event.key === ']' ? 1 : -1)
-          break
-        case 'd':
-          event.preventDefault()
-          store.toggleSplit(event.shiftKey ? 'col' : 'row')
-          break
-        case 'm':
-          // ⌘⇧M only; plain ⌘M is left to the OS (minimize).
-          if (event.shiftKey) {
-            event.preventDefault()
-            store.toggleMaximizePane()
-          }
-          break
-        // ⌘T, ⌘W and ⌘, are absent on purpose: the native menu declares them as
-        // key equivalents, so AppKit performs the menu item and this handler
-        // never sees the chord. The behaviour lives in lib/menuEvents.ts.
-        case 'arrowleft':
-          if (event.altKey) {
-            event.preventDefault()
-            store.setFocus('a')
-          }
-          break
-        case 'arrowright':
-          if (event.altKey && store.split) {
-            event.preventDefault()
-            store.setFocus('b')
-          }
-          break
         default:
           break
       }

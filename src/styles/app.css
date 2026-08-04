@@ -2382,16 +2382,39 @@
   color: var(--act);
 }
 
+/* Listening for the next keydown: the chord slot itself is the capture cue. */
+.keys__chord[data-listening='true'] {
+  border-color: var(--ac);
+  color: var(--ac);
+  animation: pul 1.4s ease-in-out infinite;
+}
+
 .keys__action { flex: 1; font-family: var(--mono); font-size: 11.5px; color: var(--fgd); }
 
 .keys__edit {
+  padding: 3px 9px;
   font-family: var(--mono);
   font-weight: 500;
   font-size: var(--t-label);
   letter-spacing: 0.12em;
+}
+
+/* The permanently fixed rows (native menu chords, ⇥) — same dim treatment the
+ * whole control used to have before any of this was wired up. */
+.keys__edit.is-disabled {
   color: var(--fgdd);
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.keys__collision {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 16px;
+  padding: 10px 13px;
+  background: color-mix(in oklch, var(--warn) 8%, transparent);
+  border: 1px solid color-mix(in oklch, var(--warn) 32%, transparent);
 }
 
 .keys__note { margin-top: 20px; letter-spacing: 0.12em; }
