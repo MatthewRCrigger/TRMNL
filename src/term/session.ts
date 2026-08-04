@@ -43,7 +43,8 @@ export interface SpawnOptions {
 export interface SessionCallbacks {
   onBlocks: (blocks: Block[]) => void
   onCwd?: (cwd: string) => void
-  onExit?: () => void
+  /** The shell process itself ended. `code` is null when the OS could not report one. */
+  onExit?: (code: number | null) => void
   /**
    * A full-screen program took over (or handed back). While `active` is true the
    * pane must render a real terminal instead of the block stream.
@@ -135,9 +136,9 @@ export class PtySession {
       }),
     )
     this.unlisten.push(
-      await listen<{ id: string }>('pty://exit', (event) => {
+      await listen<{ id: string; code: number | null }>('pty://exit', (event) => {
         if (event.payload.id !== this.id) return
-        this.handleShellExit()
+        this.handleShellExit(event.payload.code)
       }),
     )
 
@@ -169,9 +170,9 @@ export class PtySession {
       }),
     )
     this.unlisten.push(
-      await listen<{ id: string }>('pty://exit', (event) => {
+      await listen<{ id: string; code: number | null }>('pty://exit', (event) => {
         if (event.payload.id !== this.id) return
-        this.handleShellExit()
+        this.handleShellExit(event.payload.code)
       }),
     )
 
@@ -670,11 +671,13 @@ export class PtySession {
     this.emit()
   }
 
-  private handleShellExit(): void {
+  private handleShellExit(code: number | null): void {
     this.clearLiveTimer()
-    if (this.current?.running) this.closeBlock(0)
+    // Prefer the real status the OS reported; a still-open block only falls
+    // back to a fabricated success when the platform genuinely couldn't say.
+    if (this.current?.running) this.closeBlock(code ?? 0)
     this.alive = false
-    this.cbs.onExit?.()
+    this.cbs.onExit?.(code)
   }
 
   private replaceCurrent(): void {

@@ -197,11 +197,23 @@ export function Pane({ pane, showClose }: Props) {
                   {session.blocks.at(-1)?.cmd ?? ''}
                 </span>
                 <span className="rule" />
-                <span className="takeover__hint micro">⌃C TO EXIT</span>
+                {/* Same action as ⌃C in the terminal below — this is a second,
+                    more discoverable way to reach it, not a stronger kill. Most
+                    people reaching for this want out of the one command, not the
+                    whole session, so it stops there rather than closing the pane. */}
+                <button
+                  className="block__cancel is-btn is-btn--danger no-drag"
+                  onClick={() => void cancelCurrent(sessionId)}
+                  type="button"
+                  title="Send ⌃C to the running program"
+                >
+                  ⌃C EXIT
+                </button>
               </div>
 
               <TerminalView
                 key={`${sessionId}-takeover`}
+                sessionId={sessionId}
                 backlog={pty.getTakeoverBacklog()}
                 subscribe={(handler) => pty.onRaw(handler)}
                 onData={(data) => void pty.write(data)}
@@ -235,13 +247,35 @@ export function Pane({ pane, showClose }: Props) {
         </div>
       )}
 
+      {/* The shell exited on its own (`exit`, ⌃D, the process crashed). The pane
+          used to just go quietly inert here — scrollback intact but nothing
+          telling you the shell was gone, so closing it read as no different
+          from closing a live one. Saying so plainly, and disabling the
+          composer, makes "done" look like "done" instead of "stuck". */}
+      {!session.failed && session.exited && (
+        <div className="pane__dead">
+          <span className="dot" style={{ color: session.exited.code ? 'var(--err)' : 'var(--fgdd)' }} />
+          <span className="micro">
+            PROCESS EXITED{session.exited.code !== null ? ` (CODE ${session.exited.code})` : ''}
+          </span>
+          <span className="rule" />
+          <button
+            className="pane__deadact no-drag"
+            type="button"
+            onClick={() => void newSession(session.profileId, pane, { cwd: session.cwd })}
+          >
+            NEW SESSION
+          </button>
+        </div>
+      )}
+
       {/* Kept mounted during a takeover — anything half-typed survives — but
           inert, since keystrokes belong to the program the terminal is running. */}
       <Composer
         value={session.input}
         ghost={session.ghost}
-        focused={focused && !session.takeover && !session.failed}
-        disabled={session.takeover || !!session.failed}
+        focused={focused && !session.takeover && !session.failed && !session.exited}
+        disabled={session.takeover || !!session.failed || !!session.exited}
         shellLabel={shellLabel(host?.shell)}
         onChange={(v) => setSessionInput(sessionId, v)}
         onSubmit={() => void submitInput(sessionId)}

@@ -7,6 +7,7 @@ import { formatWindowTitle } from './lib/windowTitle'
 import { formatChord, resolveKeybindings } from './lib/keybindings'
 import { Appearance } from './components/Appearance'
 import { Boot } from './components/Boot'
+import { CloseConfirm } from './components/CloseConfirm'
 import { ContextMenu } from './components/ContextMenu'
 import { Pane } from './components/Pane'
 import { Palette } from './components/Palette'
@@ -181,6 +182,7 @@ export function App() {
       <Settings />
       <Search />
       <ContextMenu />
+      <CloseConfirm />
 
       {/* Focus-follows-click is handled per pane; this catches the gap between
           them so a click never lands nowhere. */}
@@ -380,8 +382,13 @@ function useGlobalKeys(): void {
       const store = useStore.getState()
 
       if (event.key === 'Escape') {
-        // Priority order: settings → appearance → palette → search.
-        if (store.settings.open) {
+        // Priority order: close-confirm → settings → appearance → palette → search.
+        // The confirm dialog sits above everything else it could be layered
+        // over, so backing out of it takes priority over any other overlay.
+        if (store.closeConfirm) {
+          store.cancelClose()
+          event.preventDefault()
+        } else if (store.settings.open) {
           store.closeSettings()
           event.preventDefault()
         } else if (store.appearance.open) {
