@@ -34,8 +34,23 @@ if [[ -f .env.local ]]; then
     # The environment wins — an explicit export should override the dotfile.
     [[ -n "${!key:-}" ]] && continue
     case "$key" in
-      APPLE_SIGNING_IDENTITY|NOTARY_PROFILE|APPLE_ID|APPLE_PASSWORD|APPLE_TEAM_ID)
+      APPLE_SIGNING_IDENTITY|NOTARY_PROFILE|APPLE_ID|APPLE_TEAM_ID)
         export "$key=$value" ;;
+      APPLE_PASSWORD)
+        # Deliberately not honoured from a dotfile. This is an app-specific
+        # password that can act on an Apple account, and reading it here would
+        # move it from encrypted keychain storage into plaintext beside the
+        # source of a public repo — the one value in this file where a
+        # .gitignore mistake actually costs something. NOTARY_PROFILE already
+        # holds it encrypted, and release.sh prefers the profile, so a password
+        # here would sit in plaintext and never even be read.
+        echo "warning: ignoring APPLE_PASSWORD in .env.local — keep it in the" >&2
+        echo "         keychain instead: xcrun notarytool store-credentials" >&2
+        echo "         (export it in your shell if you truly need the env path)" >&2 ;;
+      *)
+        # A silently-ignored key is how a typo costs an afternoon: the value
+        # looks set, and the failure arrives later as "not set".
+        echo "warning: .env.local: unrecognized key '$key' (ignored)" >&2 ;;
     esac
   done < .env.local
 fi
