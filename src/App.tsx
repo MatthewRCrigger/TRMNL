@@ -10,7 +10,6 @@ import { Boot } from './components/Boot'
 import { ContextMenu } from './components/ContextMenu'
 import { Pane } from './components/Pane'
 import { Palette } from './components/Palette'
-import { Rail } from './components/Rail'
 import { Search } from './components/Search'
 import { Settings } from './components/Settings'
 import { TitleBar } from './components/TitleBar'
@@ -33,7 +32,6 @@ export function App() {
   const paneMaximized = useStore((s) => s.paneMaximized)
   const focus = useStore((s) => s.focus)
   const setFocus = useStore((s) => s.setFocus)
-  const syncRailForWidth = useStore((s) => s.syncRailForWidth)
 
   const sweep = useStore((s) => s.identitySweep)
   const bootSequence = useStore((s) => s.settingsValues.bootSequence)
@@ -56,14 +54,6 @@ export function App() {
       setInitSettled(true)
     })
   }, [init])
-
-  // Auto-collapse the rail on narrow windows.
-  useEffect(() => {
-    const onResize = () => syncRailForWidth(window.innerWidth)
-    onResize()
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [syncRailForWidth])
 
   useGlobalKeys()
   useWindowTitle()
@@ -122,8 +112,6 @@ export function App() {
       <TitleBar />
 
       <div className="frame__body">
-        <Rail />
-
         <div
           className="panes"
           data-dir={splitDir}

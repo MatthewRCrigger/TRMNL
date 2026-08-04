@@ -9,6 +9,7 @@
  * The whole bar is a drag region; every control inside it opts out.
  */
 
+import { formatGb, formatPct, useTelemetry } from '../lib/telemetry'
 import { useStore } from '../state/store'
 
 /** Width reserved for the native traffic-light cluster. */
@@ -71,6 +72,8 @@ export function TitleBar() {
         <span className="kbd">⌘K</span>
       </button>
 
+      <Telemetry />
+
       <button
         className="titlebar__identity no-drag"
         onClick={() => toggleAppearance()}
@@ -117,6 +120,25 @@ function LayoutButton({
         }}
       />
     </button>
+  )
+}
+
+/**
+ * Compact CPU/memory readout — the title bar's replacement for the rail
+ * footer's full telemetry panel. One row only, so no sparkline or per-core
+ * breakdown here; those needed the rail's vertical space and this doesn't
+ * have it.
+ */
+function Telemetry() {
+  const telemetry = useTelemetry()
+
+  return (
+    <div className="titlebar__telemetry no-drag" aria-hidden>
+      <span className="titlebar__telstat">{formatPct(telemetry?.cpu)}</span>
+      <span className="titlebar__telstat">
+        {telemetry ? `${formatGb(telemetry.memUsed)}/${formatGb(telemetry.memTotal)}G` : '—'}
+      </span>
+    </div>
   )
 }
 
