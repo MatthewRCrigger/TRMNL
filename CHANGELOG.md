@@ -3,7 +3,7 @@
 All notable changes to TRMNL are recorded here. Dates are when a version was
 released, not when a change merged.
 
-## [Unreleased]
+## [0.5.0] - 2026-08-04
 
 ### Added
 
@@ -27,6 +27,24 @@ released, not when a change merged.
   by the app's global keydown handler; `⌘,`/`⌘T`/`⌘W` (native macOS menu
   items) and `⇥` (tied to completion) remain fixed, and `⌃C` remains
   permanent.
+- **Per-pane session tabs.** The vertical session rail is replaced by a
+  horizontal tab strip above each pane's header — closer to how iTerm/Warp/
+  VS Code do it, and each pane now visibly owns exactly the sessions in its
+  own strip. Tabs support drag-to-reorder within a pane and double-click to
+  rename a session independently of its profile name.
+- **Full-width status bar.** CPU, memory, load average, disk free, and
+  network telemetry — previously the rail's footer — now runs as one row
+  along the bottom of the frame.
+
+### Fixed
+
+- The session close button (rail row, now tab) could silently fail to
+  register a click: it was invisible until the row's `:hover` state revealed
+  it, and a normal cursor move onto the button could drop that hover state
+  mid-click. It's now always present and hit-testable, dimmed rather than
+  hidden at rest.
+- Buttons and the session/tab row now show a pointer cursor instead of the
+  default arrow, matching normal expectations for interactive elements.
 
 ## [0.4.2]
 
