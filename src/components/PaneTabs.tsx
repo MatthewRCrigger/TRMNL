@@ -21,16 +21,22 @@ export function PaneTabs({ pane }: Props) {
   const reorderSession = useStore((s) => s.reorderSession)
   const openSettings = useStore((s) => s.openSettings)
 
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragId, setDragId] = useState<string | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
 
-  // Pointer capture lives on the strip, not on individual tabs — the same
-  // shape as the pane divider's drag in App.tsx. A tab-scoped listener loses
-  // the pointer the moment a fast drag overshoots onto a neighbour or off the
-  // strip; capturing here means every move and the final up are always seen
-  // regardless of what element sits under the cursor.
+  // The pressed tab captures the pointer (see onTabPointerDown), so every
+  // move and the final up keep going to it even once the cursor overshoots
+  // onto a neighbour or off the strip — without capture, a fast drag would
+  // lose tracking the moment it left the element that started it. `indexAtX`
+  // then measures every tab's live position rather than trusting
+  // event.target, since target is pinned to the captured element throughout.
+  //
+  // The press is tracked by session id, not index: closing a tab elsewhere
+  // (a keybinding, another window) while this one is mid-drag would shift
+  // every index after it, and re-resolving id -> index on each move and on
+  // commit is what keeps the drag pinned to the session actually grabbed.
   const stripRef = useRef<HTMLDivElement>(null)
-  const pressIndex = useRef<number | null>(null)
+  const pressId = useRef<string | null>(null)
   const pressX = useRef(0)
   const dragging = useRef(false)
 
@@ -49,19 +55,19 @@ export function PaneTabs({ pane }: Props) {
     return -1
   }
 
-  const onTabPointerDown = (index: number, event: React.PointerEvent) => {
-    pressIndex.current = index
+  const onTabPointerDown = (id: string, event: React.PointerEvent) => {
+    pressId.current = id
     pressX.current = event.clientX
     dragging.current = false
     ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   }
 
   const onTabPointerMove = (event: React.PointerEvent) => {
-    if (pressIndex.current === null) return
+    if (pressId.current === null) return
     if (!dragging.current) {
       if (Math.abs(event.clientX - pressX.current) < DRAG_THRESHOLD_PX) return
       dragging.current = true
-      setDragIndex(pressIndex.current)
+      setDragId(pressId.current)
     }
     const over = indexAtX(event.clientX)
     setOverIndex(over === -1 ? null : over)
@@ -72,14 +78,15 @@ export function PaneTabs({ pane }: Props) {
     if (target.hasPointerCapture(event.pointerId)) {
       target.releasePointerCapture(event.pointerId)
     }
-    if (dragging.current && pressIndex.current !== null && overIndex !== null) {
-      if (pressIndex.current !== overIndex) {
-        reorderSession(pane, pressIndex.current, overIndex)
+    if (dragging.current && pressId.current !== null && overIndex !== null) {
+      const fromIndex = ids.indexOf(pressId.current)
+      if (fromIndex !== -1 && fromIndex !== overIndex) {
+        reorderSession(pane, fromIndex, overIndex)
       }
     }
-    pressIndex.current = null
+    pressId.current = null
     dragging.current = false
-    setDragIndex(null)
+    setDragId(null)
     setOverIndex(null)
   }
 
@@ -94,11 +101,11 @@ export function PaneTabs({ pane }: Props) {
             id={id}
             index={index}
             active={index === paneState.active}
-            dragging={index === dragIndex}
-            dragOver={index === overIndex && index !== dragIndex}
+            dragging={id === dragId}
+            dragOver={index === overIndex && id !== dragId}
             accent={profileAccent(profiles, session.profileId) ?? undefined}
             onActivate={() => activateSession(pane, index)}
-            onPointerDown={(e) => onTabPointerDown(index, e)}
+            onPointerDown={(e) => onTabPointerDown(id, e)}
             onPointerMove={onTabPointerMove}
             onPointerUp={onTabPointerUp}
           />
