@@ -18,6 +18,8 @@ const STICK_SLOP = 24
 
 export function Pane({ pane, showClose }: Props) {
   const focus = useStore((s) => s.focus)
+  const split = useStore((s) => s.split)
+  const paneMaximized = useStore((s) => s.paneMaximized)
   const host = useStore((s) => s.host)
   const foldThreshold = useStore((s) => s.settingsValues.foldThreshold)
   const paneState = useStore((s) => s.panes[pane])
@@ -122,6 +124,12 @@ export function Pane({ pane, showClose }: Props) {
             single most consequential thing to be wrong about. */}
         {session.host !== 'local' && (
           <span className="pane__remote">⇄ {session.host}</span>
+        )}
+        {/* Only the focused pane can be maximized, so this only ever appears
+            here — it is the one visible sign that a sibling pane is hidden
+            rather than closed. */}
+        {split && paneMaximized && focused && (
+          <span className="pane__branch" title="⌘⇧M to restore the split">▸◂ MAXIMIZED</span>
         )}
         <span className="rule" />
         <span className="pane__status">{focused ? 'FOCUSED' : 'IDLE'}</span>

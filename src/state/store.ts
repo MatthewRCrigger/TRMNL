@@ -162,6 +162,12 @@ interface StoreState {
   focus: PaneId
   railOpen: boolean
   railAutoCollapsed: boolean
+  /**
+   * The focused pane temporarily fills the window, per-window and never
+   * persisted — same category as scroll position, not layout. Meaningless
+   * while solo; `toggleMaximizePane` is a no-op unless `split` is true.
+   */
+  paneMaximized: boolean
 
   /* overlays */
   palette: { open: boolean; query: string; activeIndex: number }
@@ -180,6 +186,7 @@ interface StoreState {
   init: () => Promise<void>
   setFocus: (pane: PaneId) => void
   toggleSplit: (dir: SplitDir) => void
+  toggleMaximizePane: () => void
   closePane: () => void
   setPaneSize: (pct: number) => void
   setRailOpen: (open: boolean) => void
@@ -450,6 +457,7 @@ export const useStore = create<StoreState>((set, get) => ({
   focus: 'a',
   railOpen: true,
   railAutoCollapsed: false,
+  paneMaximized: false,
 
   palette: { open: false, query: '', activeIndex: 0 },
   appearance: { open: false },
@@ -617,6 +625,9 @@ export const useStore = create<StoreState>((set, get) => ({
     })
   },
 
+  toggleMaximizePane: () =>
+    set((s) => (s.split ? { paneMaximized: !s.paneMaximized } : s)),
+
   closePane() {
     const { panes } = get()
     for (const id of panes.b.sessions) {
@@ -630,6 +641,10 @@ export const useStore = create<StoreState>((set, get) => ({
       return {
         split: false,
         focus: 'a',
+        // A maximized view of a pane that no longer exists next to anything
+        // is meaningless — closing the split always returns to a normal,
+        // full-window solo pane.
+        paneMaximized: false,
         sessions,
         panes: { ...s.panes, b: { sessions: [], active: 0 } },
       }
