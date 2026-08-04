@@ -177,3 +177,29 @@ export function formatElapsed(ms: number): string {
 export function timestamp(at = new Date()): string {
   return at.toTimeString().slice(0, 8)
 }
+
+/**
+ * Render a settled block as a single markdown snippet — command, output, exit
+ * status and duration — for pasting into a PR description, issue or chat.
+ *
+ * Structured blocks (build tables, git chips, …) still serialise their
+ * underlying line output rather than reproducing the rendered UI: a fenced
+ * text dump of what the command printed is legible enough, and matching the
+ * on-screen table exactly is not the goal here.
+ */
+export function blockToMarkdown(block: Block): string {
+  const state = blockState(block)
+  const status = state === 'cancelled' ? 'cancelled' : state === 'success' ? '✓' : `✗ exit ${block.code ?? ''}`
+  const duration = block.ms !== undefined ? formatDuration(block.ms) : undefined
+  const output = block.lines.map((l) => l.text).join('\n')
+
+  const lines = [
+    '```console',
+    `$ ${block.cmd}`,
+    ...(output ? [output] : []),
+    '```',
+    [status, duration].filter(Boolean).join(' · '),
+  ]
+
+  return lines.join('\n')
+}
