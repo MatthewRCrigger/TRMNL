@@ -30,6 +30,18 @@ export APPLE_SIGNING_IDENTITY
 notary_auth=()
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
   notary_auth=(--keychain-profile "$NOTARY_PROFILE")
+  # A profile name that is merely set is not a profile that exists. Checking only
+  # that the variable is non-empty let a typo — or a profile never created on
+  # this machine — pass this gate and fail forty seconds later, after a full
+  # release build. `notarytool history` is the cheapest call that resolves the
+  # keychain item and actually reaches Apple with it.
+  if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+    echo "error: notary profile '$NOTARY_PROFILE' is unusable — not in the keychain," >&2
+    echo "       or its stored credentials are no longer valid. Create it with:" >&2
+    echo "         xcrun notarytool store-credentials $NOTARY_PROFILE \\" >&2
+    echo "           --apple-id \"<your-apple-id>\" --team-id \"TEAMID1234\"" >&2
+    exit 1
+  fi
 elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
   notary_auth=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
 else
