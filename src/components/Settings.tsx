@@ -6,6 +6,8 @@
 import { open } from '@tauri-apps/plugin-dialog'
 
 import { isValidColor, type CommandAccent } from '../lib/commandAccent'
+import { anyColorToHex, formatOklch, hexToOklch } from '../lib/color'
+import { ColorField } from './ColorField'
 import { IDENTITIES, useStore, type Density, type GhostSource, type Profile, type SettingsTab } from '../state/store'
 import type { RendererId } from '../term/renderers'
 import { Toggle } from './Appearance'
@@ -203,10 +205,19 @@ function ProfilesPane() {
               onClick={() => selectProfile(profile.id)}
               type="button"
             >
+              {/* The dot carries the profile's own colour when it has one, so
+                  the list reads as the set of clients at a glance. Remote still
+                  overrides it — that a profile is not local matters more than
+                  which client it belongs to. */}
               <span
                 className="dot"
                 style={{
-                  color: profile.connectVia === 'local' ? 'var(--ac)' : 'var(--warn)',
+                  color:
+                    profile.connectVia !== 'local'
+                      ? 'var(--warn)'
+                      : profile.accent && isValidColor(profile.accent)
+                        ? profile.accent
+                        : 'var(--ac)',
                 }}
               />
               <span className="profiles__meta">
@@ -235,6 +246,9 @@ function ProfilesPane() {
               value={selected.name}
               onChange={(e) => patch({ name: e.target.value })}
             />
+
+            <label className="form__label micro">COLOR</label>
+            <ProfileAccentField profile={selected} patch={patch} />
 
             <label className="form__label micro" htmlFor="p-cwd">WORKING DIR</label>
             {/* The field stays editable rather than becoming a read-only target
@@ -397,6 +411,115 @@ function looksSecret(key: string): boolean {
   return /token|secret|password|passwd|api[_-]?key|credential|private[_-]?key/i.test(key)
 }
 
+/**
+ * Per-profile accent: inherit, one of the identities, or anything CSS parses.
+ *
+ * Inherit is a first-class choice rather than the absence of one, because the
+ * two behave differently over time — a profile set to USER stays that colour
+ * when the global identity changes, while an inheriting profile follows it. The
+ * row makes that difference selectable instead of leaving it to whether a field
+ * happens to be empty.
+ */
+function ProfileAccentField({
+  profile,
+  patch,
+}: {
+  profile: Profile
+  patch: (changes: Partial<Profile>) => void
+}) {
+  const inherits = !profile.accent
+  // A custom colour is anything that is not one of the shipped identities; only
+  // then is the text field worth showing, so the common case stays one click.
+  const named = IDENTITIES.find((i) => i.value === profile.accent)
+  const valid = inherits || isValidColor(profile.accent!)
+
+  return (
+    <div className="paccent">
+      <div className="paccent__picks">
+        <button
+          className="paccent__pick paccent__pick--inherit"
+          data-selected={inherits}
+          onClick={() => patch({ accent: undefined })}
+          type="button"
+          aria-pressed={inherits}
+          title="Follow the global identity"
+        >
+          INHERIT
+        </button>
+
+        {IDENTITIES.map((identity) => {
+          const selected = profile.accent === identity.value
+          return (
+            <button
+              className="paccent__pick"
+              data-selected={selected}
+              key={identity.name}
+              onClick={() => patch({ accent: identity.value })}
+              type="button"
+              aria-pressed={selected}
+              title={identity.name}
+            >
+              <span className="paccent__chip" style={{ background: identity.value }} />
+              {identity.name}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Shown once the colour is not an identity, so a hand-picked value stays
+          editable rather than being unreachable through the swatches. */}
+      {!inherits && !named && (
+        <ColorField
+          value={profile.accent ?? ''}
+          onChange={(accent) => patch({ accent })}
+          label="Custom profile colour"
+        />
+      )}
+
+      {/* Nudges an identity value off the swatch it matches, so the field opens
+          on the colour already showing rather than resetting to an unrelated
+          one. Without the nudge the value stays equal to an identity, `named`
+          stays true, and the field never appears at all. */}
+      <button
+        className="paccent__custombtn"
+        onClick={() => patch({ accent: nudgeOffIdentity(profile.accent) })}
+        type="button"
+        data-selected={!inherits && !named}
+      >
+        CUSTOM…
+      </button>
+
+      {!valid && (
+        <div className="warnrow">
+          ⚠ UNREADABLE COLOUR — THIS PROFILE WILL USE THE GLOBAL IDENTITY UNTIL CORRECTED
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Where CUSTOM… starts from when there is nothing to carry over: a mid-band
+ *  colour that is already valid, so the field never opens in an error state the
+ *  user did not cause. */
+const DEFAULT_CUSTOM_ACCENT = 'oklch(0.75 0.18 300)'
+
+/**
+ * A colour that is guaranteed not to equal one of the identity swatches.
+ *
+ * Switching to CUSTOM should keep the colour on screen rather than jumping, but
+ * a value identical to an identity reads as *that identity being selected* —
+ * which is what hides the custom field. Rounding through hex both preserves the
+ * colour visually and moves the stored string off the exact identity token.
+ */
+function nudgeOffIdentity(accent: string | undefined): string {
+  if (!accent) return DEFAULT_CUSTOM_ACCENT
+  const hex = anyColorToHex(accent)
+  const back = hex ? hexToOklch(hex) : null
+  if (!back) return DEFAULT_CUSTOM_ACCENT
+  const rendered = formatOklch(back)
+  return IDENTITIES.some((i) => i.value === rendered) ? DEFAULT_CUSTOM_ACCENT : rendered
+}
+
 /* --- Appearance ------------------------------------------------------------ */
 
 const DENSITIES: Density[] = ['compact', 'normal', 'roomy']
@@ -508,15 +631,8 @@ function CommandColorsSection() {
 
       <div className="ccolors">
         {rules.map((rule, i) => {
-          const valid = isValidColor(rule.color)
           return (
             <div className="ccolors__row" key={rule.id}>
-              <span
-                className="ccolors__chip"
-                data-valid={valid}
-                style={valid ? { background: rule.color } : undefined}
-                aria-hidden="true"
-              />
               <input
                 className="ccolors__match"
                 value={rule.match}
@@ -532,15 +648,12 @@ function CommandColorsSection() {
                 placeholder="label"
                 aria-label="Rule label"
               />
-              <input
-                className="ccolors__color"
-                data-invalid={!valid}
+              {/* The swatch doubles as the picker, so the row keeps its width
+                  while losing the oklch box that used to sit beside it. */}
+              <ColorField
                 value={rule.color}
-                onChange={(e) => patch(i, { color: e.target.value })}
-                placeholder="oklch(0.75 0.18 152)"
-                aria-label="Accent colour"
-                aria-invalid={!valid}
-                spellCheck={false}
+                onChange={(color) => patch(i, { color })}
+                label={`Colour for ${rule.label || rule.match || 'rule'}`}
               />
               <Toggle
                 on={rule.enabled}
