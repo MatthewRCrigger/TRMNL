@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 
-import { useStore } from '../state/store'
+import { profileAccent, useStore } from '../state/store'
 
 interface Telemetry {
   cpu: number
@@ -28,6 +28,7 @@ export function Rail() {
   const focus = useStore((s) => s.focus)
   const activateSession = useStore((s) => s.activateSession)
   const openSettings = useStore((s) => s.openSettings)
+  const profiles = useStore((s) => s.profiles)
 
   const ids = panes[focus].sessions
   const activeIdx = panes[focus].active
@@ -57,7 +58,12 @@ export function Rail() {
                 {session.name.slice(0, 2).toUpperCase()}
                 <span
                   className="rail__tiledot"
-                  style={{ background: session.host === 'local' ? 'var(--ac)' : 'var(--warn)' }}
+                  style={{
+                    background:
+                      session.host !== 'local'
+                        ? 'var(--warn)'
+                        : (profileAccent(profiles, session.profileId) ?? 'var(--ac)'),
+                  }}
                 />
               </button>
             )
@@ -171,10 +177,14 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
   const focus = useStore((s) => s.focus)
   const activateSession = useStore((s) => s.activateSession)
   const closeSession = useStore((s) => s.closeSession)
+  const profiles = useStore((s) => s.profiles)
 
   if (!session) return null
   const count = session.blocks.length
   const remote = session.host !== 'local'
+  // The list is where several clients sit side by side, so each row shows its
+  // own colour rather than all of them showing the focused session's --ac.
+  const accent = profileAccent(profiles, session.profileId)
 
   return (
     // A row is a div rather than a button so the close control can nest inside it
@@ -197,7 +207,7 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
     >
       <span
         className="dot"
-        style={{ color: remote ? 'var(--warn)' : 'var(--ac)' }}
+        style={{ color: remote ? 'var(--warn)' : (accent ?? 'var(--ac)') }}
       />
       <span className="rail__name">{session.name}</span>
       {/* A remote session is a tunnel to somewhere else; the glyph says so at a

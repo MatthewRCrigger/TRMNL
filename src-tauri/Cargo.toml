@@ -1,6 +1,6 @@
 [package]
 name = "trmnl"
-version = "0.1.0"
+version = "0.4.1"
 description = "TRMNL — a TRON-inspired terminal for macOS"
 authors = ["Matthew Crigger"]
 edition = "2021"
@@ -24,6 +24,7 @@ anyhow = "1"
 sysinfo = "0.33"
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-notification = "2.0.0-rc.5"
+tauri-plugin-dialog = "2"
 
 [profile.release]
 codegen-units = 1

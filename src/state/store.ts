@@ -8,6 +8,8 @@
 
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import {
   DEFAULT_COMMAND_ACCENTS,
@@ -16,7 +18,14 @@ import {
   type CommandAccent,
 } from '../lib/commandAccent'
 import { notifyComplete, shouldNotify } from '../lib/notify'
-import { PtySession } from '../term/session'
+import {
+  createSessionIds,
+  isMainWindow,
+  ownerOf,
+  windowLabel,
+  workspaceKey,
+} from '../lib/windowIdentity'
+import { PtySession, type SessionCallbacks } from '../term/session'
 import { setKnownCommands, setRendererEnabled, type RendererId } from '../term/renderers'
 import type { Block } from '../term/types'
 
@@ -52,6 +61,16 @@ export interface Profile {
   startupCmd: string
   env: { key: string; value: string }[]
   isDefault?: boolean
+  /**
+   * Accent for sessions launched from this profile, or undefined to inherit the
+   * global identity.
+   *
+   * This is how one client's sessions stay recognisably one colour: the profile
+   * carries it, so every shell opened from that profile paints the same, and a
+   * profile that never sets one keeps following the global identity — including
+   * when the identity later changes, which a copied-down colour would not.
+   */
+  accent?: string
 }
 
 export interface Session {
@@ -60,6 +79,18 @@ export interface Session {
   host: string
   cwd: string
   branch: string
+  /** Shell this session was spawned with, for the window title. */
+  shell: string
+  /**
+   * Character grid last reported to the PTY.
+   *
+   * Mirrored into the store purely so the window title can name it. The pane
+   * measures the grid and sends it straight to `pty_resize`, which is the only
+   * consumer that matters — this copy is descriptive, never authoritative, and
+   * nothing should resize a terminal from it.
+   */
+  cols: number
+  rows: number
   blocks: Block[]
   input: string
   /** Ghost suggestion remainder, computed on input. */
@@ -193,10 +224,14 @@ interface StoreState {
     pane?: PaneId,
     restore?: { cwd?: string; history?: string[] },
   ) => Promise<void>
+  /** Re-attach to a shell that outlived the page that spawned it. */
+  adoptSession: (id: string) => Promise<void>
   /** Kill a session's shell and drop it from its pane. */
   closeSession: (id: string) => Promise<void>
   activateSession: (pane: PaneId, index: number) => void
   setSessionInput: (id: string, input: string) => void
+  /** Record the grid a pane just reported, so the window title can name it. */
+  setSessionSize: (id: string, cols: number, rows: number) => void
   submitInput: (id: string) => Promise<void>
   runCommand: (cmd: string, pane?: PaneId) => Promise<void>
   cancelCurrent: (id: string) => Promise<void>
@@ -212,7 +247,7 @@ interface StoreState {
 
 export type SettingsTab = 'profiles' | 'appearance' | 'behavior' | 'keybindings'
 
-const DEFAULT_SETTINGS: Settings = {
+export const DEFAULT_SETTINGS: Settings = {
   accent: DEFAULT_IDENTITY.value,
   identityName: DEFAULT_IDENTITY.name,
   density: 'normal',
@@ -243,19 +278,97 @@ const toolPolls = new Map<string, number>()
  */
 const TOOL_POLL_MS = 500
 
-let sessionCounter = 0
 /**
- * Session id, unique for the lifetime of the *process* — not the webview.
+ * Session id, unique across the whole process — not just this webview.
  *
- * The native `PtyManager` keeps its session map across a webview reload, while
- * every module-level counter here resets to zero. A bare `s1` would therefore
- * collide with the shell the previous page load already registered, `pty_spawn`
- * would reject the id, and the new session would sit in the UI attached to
- * nothing — every command stuck on RUNNING. The random suffix makes a reloaded
- * page ask for ids the backend has never seen.
+ * The native `PtyManager` is one map keyed by id, shared by every window and
+ * kept across a reload, so two sources of collision have to be ruled out. Two
+ * *windows* counting independently would both claim `s1`; the window label in
+ * the id separates them. A *reloaded* page would replay the ids it used before,
+ * which is now correct rather than a collision: `pty_adopt` hands those same
+ * sessions back, and the page re-attaches to them instead of spawning.
+ *
+ * That is why the id is derived rather than random. It used to carry a random
+ * suffix precisely so a reloaded page could never name an existing session —
+ * the opposite of what re-attaching needs.
  */
-const nextSessionId = () =>
-  `s${++sessionCounter}-${Math.random().toString(36).slice(2, 8)}`
+const nextSessionId = createSessionIds()
+
+/**
+ * The store's side of a `PtySession`, for one session id.
+ *
+ * Shared by spawning and adopting: a re-attached session has to fold its output
+ * into the store exactly as a fresh one does, and duplicating this was how the
+ * two paths would quietly drift — an adopted session that stopped notifying, or
+ * stopped picking up accents, with nothing to point at.
+ */
+/** Zustand's setter, as handed to the store creator. */
+type StoreSet = (
+  partial:
+    | Partial<StoreState>
+    | ((state: StoreState) => Partial<StoreState> | StoreState),
+) => void
+
+function sessionCallbacks(set: StoreSet, id: string): SessionCallbacks {
+  return {
+    onBlocks: (blocks) => {
+      set((s) => {
+        const existing = s.sessions[id]
+        if (!existing) return s
+
+        // Notify when a slow command settles while the window is in the
+        // background. Comparing against the previous block list means this
+        // fires once, on the transition, not on every output chunk.
+        const last = blocks.at(-1)
+        const previous = existing.blocks.at(-1)
+        if (
+          last &&
+          previous?.id === last.id &&
+          previous.running &&
+          !last.running &&
+          shouldNotify(last, document.hasFocus())
+        ) {
+          void notifyComplete(last, existing.name)
+        }
+
+        // A matched command's colour is stamped onto its own block, so the
+        // header keeps it once the global accent reverts. Resolved here
+        // because this is where the rules live; the session layer has no
+        // knowledge of them.
+        // Tree words only describe what is running now, so they inform the
+        // running block and never a settled one — a finished block's colour
+        // must not be decided by whatever happens to be alive later.
+        const stamped = blocks.map((b) => {
+          if (b.accent !== undefined) return b
+          const accent = accentFor(
+            b.cmd,
+            s.settingsValues.commandAccents,
+            b.running ? existing.tools : undefined,
+          )
+          return accent ? { ...b, accent } : b
+        })
+        const sessions = { ...s.sessions, [id]: { ...existing, blocks: stamped } }
+        // A command starting or settling is what drives the accent, so this
+        // recomputes on the same transition the notification uses.
+        return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
+      })
+    },
+    onCwd: (newCwd) => {
+      set((s) => {
+        const existing = s.sessions[id]
+        if (!existing) return s
+        return { sessions: { ...s.sessions, [id]: { ...existing, cwd: newCwd } } }
+      })
+    },
+    onTakeover: (active) => {
+      set((s) => {
+        const existing = s.sessions[id]
+        if (!existing) return s
+        return { sessions: { ...s.sessions, [id]: { ...existing, takeover: active } } }
+      })
+    },
+  }
+}
 
 /**
  * Poll the session's process tree while a command is running.
@@ -352,12 +465,17 @@ export const useStore = create<StoreState>((set, get) => ({
   host: null,
 
   async init() {
-    // Reap shells left behind by a previous page load. `init` runs once per
-    // webview load, and a reload is the only way a second one happens — at which
-    // point the sessions this store described are gone but their shells are not.
-    // Killing them here, before anything spawns, is what keeps a reload from
-    // leaking a shell (and its PTY reader thread) on every cycle.
-    await invoke<number>('pty_kill_all').catch(() => 0)
+    // Sessions this window already owns, from a previous page load. `init` runs
+    // once per webview load, and a reload is the only way a second one happens
+    // — at which point the store that described these shells is gone but the
+    // shells themselves are still running and still owned by this window.
+    //
+    // They used to be killed here, because nothing recorded who owned what and
+    // reaping everything was the only way to avoid leaking a PTY per reload.
+    // Now they are adopted instead: the shell, its scrollback and whatever it is
+    // running all survive. A window that really closes is reaped natively, on
+    // the window-destroyed event, which is the case this can no longer see.
+    const orphans = await invoke<string[]>('pty_adopt').catch(() => [])
 
     const host = await invoke<HostInfo>('host_info')
 
@@ -376,14 +494,16 @@ export const useStore = create<StoreState>((set, get) => ({
         const parsed = JSON.parse(raw) as {
           settings?: Partial<Settings>
           profiles?: Profile[]
-          workspace?: PersistedWorkspace
-        }
+        } & Record<string, unknown>
         // Fields are copied one at a time rather than spread, so keys retired
         // from Settings (glow, scanlines) are dropped instead of being carried
         // back into the file on the next save.
         settingsValues = pickSettings(parsed.settings)
         if (Array.isArray(parsed.profiles)) profiles = parsed.profiles
-        if (parsed.workspace?.panes?.a) workspace = parsed.workspace
+        // Per-window key, so a second window restores its own layout rather
+        // than the main window's. See lib/windowIdentity.
+        const saved = parsed[workspaceKey()] as PersistedWorkspace | undefined
+        if (saved?.panes?.a) workspace = saved
       } catch {
         // A corrupt config falls back to defaults rather than blocking launch.
       }
@@ -408,35 +528,62 @@ export const useStore = create<StoreState>((set, get) => ({
     applyTheme(settingsValues)
     set({ host, settingsValues, profiles })
 
+    // A reload: re-attach to the live shells rather than restoring the config's
+    // snapshot of them. This wins over `restoreOnLaunch` because the snapshot is
+    // a description of these same sessions written up to 180ms ago, while the
+    // sessions themselves are right there — still running, mid-command, with
+    // scrollback the config never held.
+    //
+    // Layout is not recovered here. The store that knew which pane each session
+    // sat in died with the page, and the native side tracks ownership per window
+    // rather than per pane, so everything lands in pane A in creation order. A
+    // reload is rare enough that losing a split is a fair trade for not losing a
+    // running command; recovering the layout would mean persisting the pane
+    // assignment on every session move.
+    if (orphans.length > 0) {
+      for (const id of orphans) {
+        await get().adoptSession(id)
+      }
+      return
+    }
+
     // Restore the previous workspace when the setting is on and there is one to
     // restore; otherwise open a single session from the default profile.
     if (settingsValues.restoreOnLaunch && workspace && workspace.panes.a.sessions.length > 0) {
+      // A window opens solo. Splitting is a deliberate act — ⌘D — and restoring
+      // one means a split made once is inherited by every launch afterwards,
+      // with no obvious way to tell it apart from the app simply opening that
+      // way. The direction is still restored, so the next ⌘D splits the way the
+      // user last chose; only the split itself has to be asked for again.
       set({
-        split: workspace.split,
+        split: false,
         splitDir: workspace.splitDir,
         paneSize: workspace.paneSize,
         railOpen: workspace.railOpen,
       })
 
-      for (const pane of ['a', 'b'] as PaneId[]) {
-        const saved = workspace.panes[pane]
-        if (pane === 'b' && !workspace.split) continue
-        for (const entry of saved.sessions) {
-          await get().newSession(entry.profileId, pane, {
-            cwd: entry.cwd,
-            history: entry.history,
-          })
-        }
-        set((s) => ({
-          panes: {
-            ...s.panes,
-            [pane]: {
-              ...s.panes[pane],
-              active: Math.min(saved.active, Math.max(0, saved.sessions.length - 1)),
-            },
-          },
-        }))
+      // Pane A only. Pane B is not visible in a solo window, so restoring its
+      // sessions would spawn shells into a pane with nothing rendering them —
+      // live PTYs the user cannot see, reach or close.
+      const saved = workspace.panes.a
+      for (const entry of saved.sessions) {
+        await get().newSession(entry.profileId, 'a', {
+          cwd: entry.cwd,
+          history: entry.history,
+        })
       }
+      set((s) => {
+        const panes = {
+          ...s.panes,
+          a: {
+            ...s.panes.a,
+            active: Math.min(saved.active, Math.max(0, saved.sessions.length - 1)),
+          },
+        }
+        // The restored selection is rarely the last session spawned above, so
+        // the colour is resolved once the real active index is in place.
+        return { panes, commandAccent: syncCommandAccent({ ...s, panes }) }
+      })
       return
     }
 
@@ -563,9 +710,10 @@ export const useStore = create<StoreState>((set, get) => ({
     // new accent sweeps the window. --ac is held back to the sweep's midpoint so
     // the trailing half of the band reveals UI that has already repainted; the
     // sweep element calls applyIdentity when it gets there.
-    // A command override is currently painting the UI, so an identity sweep would
-    // advertise a colour that will not appear until that command exits. Change
-    // the setting silently instead; it takes effect on revert.
+    // An override — a running command, or the focused session's profile colour —
+    // is painting the UI, so a sweep would advertise a colour that is not going
+    // to appear. Change the setting silently instead; it shows on any session
+    // that inherits the identity, and on this one if its override goes away.
     const overridden = get().commandAccent !== null
     const sweeping =
       patch.accent !== undefined &&
@@ -614,12 +762,19 @@ export const useStore = create<StoreState>((set, get) => ({
       const idx = s.profiles.findIndex((p) => p.id === profile.id)
       const profiles = idx === -1 ? [...s.profiles, profile] : [...s.profiles]
       if (idx !== -1) profiles[idx] = profile
-      return { profiles }
+      // Editing the colour of the focused session's profile repaints as you
+      // type, so the swatches in Settings preview against the real interface
+      // rather than against themselves.
+      return { profiles, commandAccent: syncCommandAccent({ ...s, profiles }) }
     })
     persist()
   },
 
   deleteProfile(id) {
+    // Recorded before the write, so the save below can tell a deliberate delete
+    // apart from a profile this window simply never heard about. Without it the
+    // union in mergeConfig reads the id back off disk and undoes the deletion.
+    deletedProfiles.add(id)
     set((s) => {
       const profiles = s.profiles.filter((p) => p.id !== id)
       return {
@@ -629,6 +784,10 @@ export const useStore = create<StoreState>((set, get) => ({
           selectedProfile:
             s.settings.selectedProfile === id ? (profiles[0]?.id ?? null) : s.settings.selectedProfile,
         },
+        // Sessions launched from the deleted profile keep pointing at an id that
+        // no longer resolves, so their colour has to fall back to the identity
+        // rather than stay stuck on a profile that is gone.
+        commandAccent: syncCommandAccent({ ...s, profiles }),
       }
     })
     persist()
@@ -638,6 +797,70 @@ export const useStore = create<StoreState>((set, get) => ({
     set((s) => ({
       profiles: s.profiles.map((p) => ({ ...p, isDefault: p.id === id })),
     }))
+    persist()
+  },
+
+  async adoptSession(id) {
+    const state = get()
+    if (state.sessions[id]) return
+
+    // The id was minted by this window before the reload, so its label is ours;
+    // anything else means the native side handed over a session belonging to
+    // another window, and attaching would point this UI at a stranger's shell.
+    const owner = ownerOf(id)
+    if (owner !== null && owner !== windowLabel) {
+      console.error(`trmnl: refusing to adopt ${id}, owned by ${owner}`)
+      return
+    }
+
+    // What the old store knew about this session died with the page. The shell
+    // is the authority on cwd and it re-announces on the next prompt, so an
+    // approximate starting point is enough; the rest is genuinely gone.
+    const cwd = state.host?.home ?? '~'
+    const session: Session = {
+      id,
+      name: 'shell',
+      host: 'local',
+      cwd,
+      branch: '',
+      shell: state.host?.shell ?? '',
+      cols: 120,
+      rows: 32,
+      blocks: [],
+      input: '',
+      ghost: '',
+      history: [],
+      historyIndex: null,
+      takeover: false,
+      tools: [],
+    }
+
+    set((s) => {
+      const sessions = { ...s.sessions, [id]: session }
+      const panes = {
+        ...s.panes,
+        a: {
+          sessions: [...s.panes.a.sessions, id],
+          active: s.panes.a.sessions.length,
+        },
+      }
+      // An adopted session has no profile — which one spawned it died with the
+      // page — so this resolves to the identity. It still has to run: the
+      // session it just became active over may have been carrying a colour.
+      return { sessions, panes, commandAccent: syncCommandAccent({ ...s, sessions, panes }) }
+    })
+
+    const pty = new PtySession(id, cwd, sessionCallbacks(set, id), get().settingsValues.scrollbackCap)
+    ptys.set(id, pty)
+    startToolPoll(id)
+    await pty.attach(get().host?.hookVersion)
+
+    // Nudge the shell into redrawing its prompt, so an adopted session shows
+    // something rather than sitting blank until the user presses a key. A bare
+    // newline is the one input that is safe mid-command: it submits an empty
+    // line to an idle shell and is swallowed by anything already running.
+    await pty.write('\n').catch(() => {})
+
     persist()
   },
 
@@ -660,6 +883,10 @@ export const useStore = create<StoreState>((set, get) => ({
       host: isRemote ? profile!.connectVia : 'local',
       cwd,
       branch: '',
+      shell: profile?.shell ?? state.host?.shell ?? '',
+      // The spawn size below, until the pane has measured itself and reported.
+      cols: 120,
+      rows: 32,
       blocks: [],
       input: '',
       ghost: '',
@@ -670,80 +897,22 @@ export const useStore = create<StoreState>((set, get) => ({
       tools: [],
     }
 
-    set((s) => ({
-      sessions: { ...s.sessions, [id]: session },
-      panes: {
+    set((s) => {
+      const sessions = { ...s.sessions, [id]: session }
+      const panes = {
         ...s.panes,
         [targetPane]: {
           sessions: [...s.panes[targetPane].sessions, id],
           active: s.panes[targetPane].sessions.length,
         },
-      },
-    }))
+      }
+      // A new session lands active, so if its profile carries a colour the
+      // window has to take it now — nothing else will fire until the first
+      // command runs.
+      return { sessions, panes, commandAccent: syncCommandAccent({ ...s, sessions, panes }) }
+    })
 
-    const pty = new PtySession(
-      id,
-      cwd,
-      {
-        onBlocks: (blocks) => {
-          set((s) => {
-            const existing = s.sessions[id]
-            if (!existing) return s
-
-            // Notify when a slow command settles while the window is in the
-            // background. Comparing against the previous block list means this
-            // fires once, on the transition, not on every output chunk.
-            const last = blocks.at(-1)
-            const previous = existing.blocks.at(-1)
-            if (
-              last &&
-              previous?.id === last.id &&
-              previous.running &&
-              !last.running &&
-              shouldNotify(last, document.hasFocus())
-            ) {
-              void notifyComplete(last, existing.name)
-            }
-
-            // A matched command's colour is stamped onto its own block, so the
-            // header keeps it once the global accent reverts. Resolved here
-            // because this is where the rules live; the session layer has no
-            // knowledge of them.
-            // Tree words only describe what is running now, so they inform the
-            // running block and never a settled one — a finished block's colour
-            // must not be decided by whatever happens to be alive later.
-            const stamped = blocks.map((b) => {
-              if (b.accent !== undefined) return b
-              const accent = accentFor(
-                b.cmd,
-                s.settingsValues.commandAccents,
-                b.running ? existing.tools : undefined,
-              )
-              return accent ? { ...b, accent } : b
-            })
-            const sessions = { ...s.sessions, [id]: { ...existing, blocks: stamped } }
-            // A command starting or settling is what drives the accent, so this
-            // recomputes on the same transition the notification uses.
-            return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
-          })
-        },
-        onCwd: (newCwd) => {
-          set((s) => {
-            const existing = s.sessions[id]
-            if (!existing) return s
-            return { sessions: { ...s.sessions, [id]: { ...existing, cwd: newCwd } } }
-          })
-        },
-        onTakeover: (active) => {
-          set((s) => {
-            const existing = s.sessions[id]
-            if (!existing) return s
-            return { sessions: { ...s.sessions, [id]: { ...existing, takeover: active } } }
-          })
-        },
-      },
-      get().settingsValues.scrollbackCap,
-    )
+    const pty = new PtySession(id, cwd, sessionCallbacks(set, id), get().settingsValues.scrollbackCap)
     ptys.set(id, pty)
     startToolPoll(id)
 
@@ -813,7 +982,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
       const sessions = { ...s.sessions }
       delete sessions[id]
-      return { panes, sessions }
+      // Whatever the pane fell back to may belong to a different profile, so the
+      // window's colour is resolved against the new selection rather than left
+      // showing the closed session's.
+      return { panes, sessions, commandAccent: syncCommandAccent({ ...s, panes, sessions }) }
     })
 
     // A pane with no sessions left has nothing to render; give it a fresh one so
@@ -822,11 +994,24 @@ export const useStore = create<StoreState>((set, get) => ({
     for (const paneId of ['a', 'b'] as PaneId[]) {
       const pane = state.panes[paneId]
       if (pane.sessions.length > 0) continue
-      // Pane B simply closes; pane A always needs a session.
+      // Pane B simply closes; pane A is the one that cannot be left empty.
       if (paneId === 'b' && state.split) {
         state.closePane()
       } else if (paneId === 'a') {
-        await state.newSession()
+        // Closing the last session closes the window, which is what every other
+        // macOS terminal does and the only way a secondary window can be shut
+        // with ⌘W at all — respawning here would make window 2 unclosable, since
+        // ⌘W would hand it a fresh session forever.
+        //
+        // The main window is the exception: it is the app's last one, and
+        // quitting on ⌘W would be a surprise from a chord that means "close
+        // this". It keeps the old behaviour of always holding a session.
+        if (isMainWindow()) {
+          await state.newSession()
+        } else {
+          await getCurrentWindow().close()
+          return
+        }
       }
     }
     persist()
@@ -848,6 +1033,18 @@ export const useStore = create<StoreState>((set, get) => ({
           [id]: { ...session, input, ghost: computeGhost(input, session, s.settingsValues), historyIndex: null },
         },
       }
+    })
+  },
+
+  setSessionSize(id, cols, rows) {
+    set((s) => {
+      const session = s.sessions[id]
+      if (!session) return s
+      // A ResizeObserver fires for changes that do not move the character grid —
+      // a one-pixel layout settle, a divider drag within a cell. Bailing on an
+      // unchanged grid keeps those from re-rendering every block in the pane.
+      if (session.cols === cols && session.rows === rows) return s
+      return { sessions: { ...s.sessions, [id]: { ...session, cols, rows } } }
     })
   },
 
@@ -1073,19 +1270,35 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * Recompute the command accent from whatever is running in the focused pane.
+ * Recompute the accent override from whatever the focused pane is showing.
  *
  * The accent is a single `:root` variable, so it cannot differ per pane. Scoping
- * it to the *focused* pane's running command is the resolution: the colour tracks
- * where you are looking. A command still running in a background pane does not
- * fight for the theme, and focusing that pane picks its colour up.
+ * it to the *focused* pane is the resolution: the colour tracks where you are
+ * looking. A command still running in a background pane does not fight for the
+ * theme, and focusing that pane picks its colour up.
  *
- * Called on every block update, focus change and settings change. It writes to
- * the DOM only when the resolved colour actually differs, so the common case
- * (output streaming, no colour change) costs one comparison.
+ * Precedence, strongest first:
+ *
+ *   1. A running command's rule — transient, and the most specific thing on
+ *      screen: it says what is happening *right now*.
+ *   2. The session's profile accent — which client this shell belongs to. It
+ *      outlives any one command, so it is what the window returns to.
+ *   3. The global identity, via a null return, meaning "no override".
+ *
+ * Command over profile is deliberate: a client colour that a running `docker`
+ * could not tint would make the command rules useless in exactly the sessions
+ * that do the work, and the command's colour is self-reverting where the
+ * profile's is not.
+ *
+ * Called on every block update, focus change, session change and settings
+ * change. It writes to the DOM only when the resolved colour actually differs,
+ * so the common case (output streaming, no colour change) costs one comparison.
  */
 function syncCommandAccent(
-  state: Pick<StoreState, 'panes' | 'focus' | 'sessions' | 'settingsValues' | 'commandAccent'>,
+  state: Pick<
+    StoreState,
+    'panes' | 'focus' | 'sessions' | 'settingsValues' | 'commandAccent' | 'profiles'
+  >,
 ): string | null {
   const pane = state.panes[state.focus]
   const sessionId = pane.sessions[pane.active]
@@ -1104,6 +1317,8 @@ function syncCommandAccent(
         running.accent ??
         accentFor(running.cmd, state.settingsValues.commandAccents, session.tools)
     }
+    // No command is claiming the window, so the session's own identity shows.
+    next ??= profileAccent(state.profiles, session.profileId)
   }
 
   if (next !== state.commandAccent) {
@@ -1112,23 +1327,184 @@ function syncCommandAccent(
   return next
 }
 
+/**
+ * The accent a session inherits from its profile, or null for the global one.
+ *
+ * Validated at the point of use rather than trusted from the profile: profiles
+ * are hand-editable on disk, and an unparseable `--ac` would propagate through
+ * every color-mix-derived token and leave the whole interface unreadable.
+ */
+export function profileAccent(profiles: Profile[], profileId: string | undefined): string | null {
+  if (!profileId) return null
+  const accent = profiles.find((p) => p.id === profileId)?.accent
+  return accent && isValidColor(accent) ? accent : null
+}
+
 /** Apply the token-level theme to :root. */
 function applyTheme(settings: Settings, override?: string | null): void {
   const root = document.documentElement
   // A command override wins over the configured identity for as long as it runs.
   // `settings.accent` is never mutated, so the user's identity survives untouched
   // and reverting is just dropping the override.
-  root.style.setProperty('--ac', override ?? settings.accent)
+  //
+  // Writes --ac-raw, not --ac: tokens.css derives --ac from it with a lightness
+  // floor, so a colour too dark to see becomes visible rather than dissolving
+  // every hairline. Setting --ac here would overwrite that derivation and skip
+  // the floor entirely.
+  root.style.setProperty('--ac-raw', override ?? settings.accent)
   root.dataset.density = settings.density
 }
 
 /** The window layout and session list, restored on the next launch. */
-interface PersistedWorkspace {
+export interface PersistedWorkspace {
   split: boolean
   splitDir: SplitDir
   paneSize: number
   railOpen: boolean
   panes: Record<PaneId, { active: number; sessions: { profileId?: string; cwd: string; history: string[] }[] }>
+}
+
+/**
+ * Fold this window's state into the config file as it exists on disk.
+ *
+ * Every window writes to one shared file, so a save cannot be a blind
+ * serialisation of what this window happens to hold. Settings and profiles are
+ * global: this window rewrites them, which is correct because a change to either
+ * is broadcast to every window as it is made. The workspace is per-window and
+ * keyed, so windows never touch each other's layouts.
+ *
+ * Unrecognised keys are preserved rather than dropped. Another window's
+ * workspace is exactly such a key from this window's point of view, and dropping
+ * it would mean the last window to save silently erases every other window's
+ * saved layout — which is the bug this whole function exists to prevent.
+ */
+export function mergeConfig(
+  raw: string | null,
+  update: {
+    settings: Settings
+    profiles: Profile[]
+    /** Ids this window deleted on purpose, so the union cannot resurrect them. */
+    deletedProfiles?: readonly string[]
+    workspace: PersistedWorkspace | undefined
+    key: string
+  },
+): string {
+  let file: Record<string, unknown> = {}
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      // A JSON scalar or array parses fine but cannot carry keys; treating one
+      // as the config would throw on assignment or produce nonsense on save.
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        file = parsed as Record<string, unknown>
+      }
+    } catch {
+      // Corrupt on disk; this write replaces it wholesale. The alternative is
+      // refusing to save at all, which loses the running window's state too.
+    }
+  }
+
+  file.settings = update.settings
+
+  // Profiles are application-global: a profile added in one window has to be
+  // reachable from every other. That makes a wholesale overwrite wrong — this
+  // window's list is only as fresh as the last time it heard about a change, and
+  // assigning it would delete a profile another window added a moment ago.
+  //
+  // So the list is unioned by id against what is already on disk. A profile this
+  // window holds wins for its own id, since it is the one being edited here;
+  // anything on disk that this window has never seen is carried through
+  // untouched.
+  //
+  // Deletion cannot be expressed by absence under those rules — an absent id is
+  // indistinguishable from one this window never learned about, and unioning
+  // would resurrect it on the next save. `deletedProfiles` records the ids this
+  // window removed on purpose, so a real delete still lands.
+  const onDisk = Array.isArray(file.profiles) ? (file.profiles as Profile[]) : []
+  const deleted = new Set(update.deletedProfiles ?? [])
+  const byId = new Map<string, Profile>()
+  for (const p of onDisk) {
+    if (p && typeof p.id === 'string' && !deleted.has(p.id)) byId.set(p.id, p)
+  }
+  for (const p of update.profiles) byId.set(p.id, p)
+  const merged = [...byId.values()]
+
+  // Exactly one profile may be the default, and two windows can each believe
+  // theirs is. The saving window's choice wins, because it is the one that just
+  // acted; the alternative is a file with two defaults and a launch that picks
+  // whichever comes first.
+  const defaultId = update.profiles.find((p) => p.isDefault)?.id
+  file.profiles = defaultId
+    ? merged.map((p) => (p.isDefault && p.id !== defaultId ? { ...p, isDefault: false } : p))
+    : merged
+
+  // An absent workspace means restore-on-launch is off, so the stale entry has
+  // to go — otherwise turning the setting off would leave the old layout on disk
+  // to be restored the next time it is turned on.
+  if (update.workspace) file[update.key] = update.workspace
+  else delete file[update.key]
+
+  return JSON.stringify(file, null, 2)
+}
+
+/**
+ * Profile ids this window has deleted, for as long as the window lives.
+ *
+ * Held outside the store because it is bookkeeping for the writer, not state the
+ * UI renders. It is never cleared: a tombstone costs one string, and dropping it
+ * early would let a stale window on its next save union the profile back in.
+ */
+const deletedProfiles = new Set<string>()
+
+/**
+ * Event carrying globally-shared config to the other windows.
+ *
+ * Settings and profiles are application-wide, so a change made in one window has
+ * to reach the others or each shows a different truth until reloaded. The file on
+ * disk is the durable record; this is what makes the *live* windows agree.
+ */
+const CONFIG_SYNC = 'trmnl://config-sync'
+
+interface ConfigSync {
+  /** Emitting window's label, so it can ignore its own broadcast. */
+  from: string
+  settings: Settings
+  profiles: Profile[]
+}
+
+/**
+ * Apply another window's config change to this one.
+ *
+ * Only the globally-shared slices are taken. Sessions, panes and focus are this
+ * window's own and must never arrive from outside — that would make two windows
+ * mirror each other rather than be independent views.
+ */
+export function listenForConfigSync(): () => void {
+  const pending = listen<ConfigSync>(CONFIG_SYNC, ({ payload }) => {
+    if (payload.from === windowLabel) return
+    useStore.setState((s) => {
+      // Re-resolve the accent: the incoming change may alter the identity, the
+      // command rules, or the colour of the profile this window has focused.
+      const next = { ...s, settingsValues: payload.settings, profiles: payload.profiles }
+      return {
+        settingsValues: payload.settings,
+        profiles: payload.profiles,
+        commandAccent: syncCommandAccent(next),
+      }
+    })
+    // Renderer toggles and density live outside the store's own reactivity.
+    setRendererEnabled(payload.settings.renderers)
+    applyTheme(payload.settings, useStore.getState().commandAccent)
+  })
+
+  let unlisten: UnlistenFn | undefined
+  void pending.then((fn) => {
+    unlisten = fn
+  })
+  return () => {
+    void pending.then((fn) => fn())
+    unlisten?.()
+  }
 }
 
 /** Debounced write of the persisted slice. Settings save immediately. */
@@ -1157,9 +1533,36 @@ function persist(): void {
         }
       : undefined
 
-    void invoke('config_save', {
-      contents: JSON.stringify({ settings: settingsValues, profiles, workspace }, null, 2),
-    }).catch((err) => console.error('trmnl: could not save config', err))
+    // Read-modify-write, keyed per window. Settings and profiles are shared, so
+    // a blind overwrite would let one window's stale copy clobber a change made
+    // in another — and each window's workspace lives under its own key, so two
+    // windows saving layouts no longer race to be last.
+    void invoke<string | null>('config_load')
+      .catch(() => null)
+      .then((raw) =>
+        invoke('config_save', {
+          contents: mergeConfig(raw, {
+            settings: settingsValues,
+            profiles,
+            deletedProfiles: [...deletedProfiles],
+            workspace,
+            key: workspaceKey(),
+          }),
+        }),
+      )
+      .catch((err) => console.error('trmnl: could not save config', err))
+
+    // Tell the other windows, so they do not sit on a stale profile list until
+    // reloaded. Emitted after the write is queued rather than awaited: the file
+    // is the durable record, and a failed write should not also mean the live
+    // windows disagree about what the user just did.
+    void emit(CONFIG_SYNC, {
+      from: windowLabel,
+      settings: settingsValues,
+      profiles,
+    } satisfies ConfigSync).catch(() => {
+      // A window closing mid-emit is routine; the file still has the change.
+    })
   }, 180)
 }
 

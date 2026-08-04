@@ -1,17 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the TRMNL main window.",
+  "description": "Capabilities for every TRMNL window.",
   "windows": [
-    "main"
+    "main",
+    "win-*"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-title",
+    "core:window:allow-close",
     "core:event:default",
     "os:default",
     "notification:default",
+    "dialog:allow-open",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

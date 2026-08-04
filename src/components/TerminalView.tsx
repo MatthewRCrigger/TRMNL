@@ -52,6 +52,25 @@ export function TerminalView({ backlog, subscribe, onData, onResize, focused }: 
     const read = (name: string, fallback: string) =>
       styles.getPropertyValue(name).trim() || fallback
 
+    /**
+     * A colour token, resolved to something xterm can parse.
+     *
+     * Custom properties come back from `getPropertyValue` as their unresolved
+     * text, so a token defined with relative colour syntax — `--ac` is
+     * `oklch(from …)` — arrives as that literal function string, which xterm
+     * cannot read. Assigning it to a real element and reading back `color`
+     * makes the engine do the substitution and hand back an actual colour.
+     */
+    const readColor = (name: string, fallback: string) => {
+      const probe = document.createElement('span')
+      probe.style.color = `var(${name})`
+      probe.style.display = 'none'
+      document.body.appendChild(probe)
+      const resolved = getComputedStyle(probe).color
+      probe.remove()
+      return resolved || fallback
+    }
+
     const term = new Terminal({
       allowProposedApi: true,
       convertEol: false,
@@ -63,10 +82,10 @@ export function TerminalView({ backlog, subscribe, onData, onResize, focused }: 
       // Match the block stream's palette so the takeover does not read as a
       // different application.
       theme: {
-        background: read('--bg', '#07090d'),
-        foreground: read('--fg', '#e8eef2'),
-        cursor: read('--ac', '#37e0f5'),
-        cursorAccent: read('--bg', '#07090d'),
+        background: readColor('--bg', '#07090d'),
+        foreground: readColor('--fg', '#e8eef2'),
+        cursor: readColor('--ac', '#37e0f5'),
+        cursorAccent: readColor('--bg', '#07090d'),
         selectionBackground: 'rgba(120,180,200,0.3)',
       },
       scrollback: 10_000,
