@@ -169,8 +169,6 @@ interface StoreState {
   splitDir: SplitDir
   paneSize: number
   focus: PaneId
-  railOpen: boolean
-  railAutoCollapsed: boolean
   /**
    * The focused pane temporarily fills the window, per-window and never
    * persisted — same category as scroll position, not layout. Meaningless
@@ -198,8 +196,6 @@ interface StoreState {
   toggleMaximizePane: () => void
   closePane: () => void
   setPaneSize: (pct: number) => void
-  setRailOpen: (open: boolean) => void
-  syncRailForWidth: (width: number) => void
 
   openPalette: () => void
   closePalette: () => void
@@ -256,6 +252,10 @@ interface StoreState {
   /** Kill a session's shell and drop it from its pane. */
   closeSession: (id: string) => Promise<void>
   activateSession: (pane: PaneId, index: number) => void
+  /** User override of a session's name, independent of its profile from then on. */
+  renameSession: (id: string, name: string) => void
+  /** Move a tab within its own pane's strip. Cross-pane moves are not supported. */
+  reorderSession: (pane: PaneId, fromIndex: number, toIndex: number) => void
   setSessionInput: (id: string, input: string) => void
   /** Record the grid a pane just reported, so the window title can name it. */
   setSessionSize: (id: string, cols: number, rows: number) => void
@@ -476,8 +476,6 @@ export const useStore = create<StoreState>((set, get) => ({
   splitDir: 'row',
   paneSize: 50,
   focus: 'a',
-  railOpen: true,
-  railAutoCollapsed: false,
   paneMaximized: false,
 
   palette: { open: false, query: '', activeIndex: 0 },
@@ -588,7 +586,6 @@ export const useStore = create<StoreState>((set, get) => ({
         split: false,
         splitDir: workspace.splitDir,
         paneSize: workspace.paneSize,
-        railOpen: workspace.railOpen,
       })
 
       // Pane A only. Pane B is not visible in a solo window, so restoring its
@@ -675,21 +672,6 @@ export const useStore = create<StoreState>((set, get) => ({
   setPaneSize: (pct) => {
     set({ paneSize: Math.min(78, Math.max(22, pct)) })
     persist()
-  },
-  setRailOpen: (open) => {
-    set({ railOpen: open, railAutoCollapsed: false })
-    persist()
-  },
-
-  syncRailForWidth(width) {
-    // Collapse automatically below ~1100px; a manual toggle overrides for the
-    // session, so only undo an auto-collapse.
-    const { railOpen, railAutoCollapsed } = get()
-    if (width < 1100 && railOpen) {
-      set({ railOpen: false, railAutoCollapsed: true })
-    } else if (width >= 1100 && !railOpen && railAutoCollapsed) {
-      set({ railOpen: true, railAutoCollapsed: false })
-    }
   },
 
   openPalette: () => set({ palette: { open: true, query: '', activeIndex: 0 } }),
@@ -1069,6 +1051,35 @@ export const useStore = create<StoreState>((set, get) => ({
       return { panes, commandAccent: syncCommandAccent({ ...s, panes }) }
     }),
 
+  renameSession: (id, name) =>
+    set((s) => {
+      const session = s.sessions[id]
+      const trimmed = name.trim()
+      if (!session || !trimmed) return s
+      return { sessions: { ...s.sessions, [id]: { ...session, name: trimmed } } }
+    }),
+
+  reorderSession: (pane, fromIndex, toIndex) =>
+    set((s) => {
+      const paneState = s.panes[pane]
+      if (fromIndex === toIndex) return s
+      if (fromIndex < 0 || fromIndex >= paneState.sessions.length) return s
+      if (toIndex < 0 || toIndex >= paneState.sessions.length) return s
+
+      const sessions = [...paneState.sessions]
+      const [moved] = sessions.splice(fromIndex, 1)
+      if (moved === undefined) return s
+      sessions.splice(toIndex, 0, moved)
+
+      // The active *session* stays selected across the reorder, even though its
+      // index just changed — otherwise dragging the active tab would switch
+      // which session the pane shows.
+      const activeId = paneState.sessions[paneState.active]
+      const active = activeId ? sessions.indexOf(activeId) : paneState.active
+
+      return { panes: { ...s.panes, [pane]: { sessions, active } } }
+    }),
+
   setSessionInput(id, input) {
     set((s) => {
       const session = s.sessions[id]
@@ -1407,7 +1418,6 @@ export interface PersistedWorkspace {
   split: boolean
   splitDir: SplitDir
   paneSize: number
-  railOpen: boolean
   panes: Record<PaneId, { active: number; sessions: { profileId?: string; cwd: string; history: string[] }[] }>
 }
 
@@ -1572,7 +1582,6 @@ function persist(): void {
           split: state.split,
           splitDir: state.splitDir,
           paneSize: state.paneSize,
-          railOpen: state.railOpen,
           panes: {
             a: serialisePane(state, 'a'),
             b: serialisePane(state, 'b'),

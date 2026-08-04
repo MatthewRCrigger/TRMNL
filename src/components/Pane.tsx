@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { getPty, useStore, type PaneId } from '../state/store'
 import { Block } from './Block'
 import { Composer } from './Composer'
+import { PaneTabs } from './PaneTabs'
 import { TerminalView } from './TerminalView'
 import { Welcome } from './Welcome'
 
@@ -114,6 +115,8 @@ export function Pane({ pane, showClose }: Props) {
         if (!focused) setFocus(pane)
       }}
     >
+      <PaneTabs pane={pane} />
+
       <header className="pane__head">
         <span className="pane__sq" style={{ background: edgeColor }} />
         <span className="pane__cwd" style={{ color: focused ? 'var(--fg)' : 'var(--fgd)' }}>

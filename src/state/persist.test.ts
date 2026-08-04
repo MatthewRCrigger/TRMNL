@@ -9,7 +9,6 @@ const workspace = (cwd: string): PersistedWorkspace => ({
   split: false,
   splitDir: 'row',
   paneSize: 50,
-  railOpen: true,
   panes: {
     a: { active: 0, sessions: [{ cwd, history: [] }] },
     b: { active: 0, sessions: [] },
