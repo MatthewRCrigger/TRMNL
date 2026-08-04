@@ -75,6 +75,7 @@ describe('pickSettings', () => {
       serve: true,
       err: true,
       list: true,
+      test: true,
     })
   })
 

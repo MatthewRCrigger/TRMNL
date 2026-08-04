@@ -69,6 +69,13 @@ export type Structured =
   | { kind: 'serve'; links: ServeLink[]; title: string; hints: ServeHint[] }
   | { kind: 'err'; message: string; detail?: string; suggestion?: string }
   | { kind: 'list'; entries: ListEntry[]; total?: string }
+  | { kind: 'test'; passed: number; failed: number; skipped: number; duration?: string; failures: TestFailure[] }
+
+export interface TestFailure {
+  name: string
+  /** The suite/describe path the test lives under, when the runner reports one. */
+  suite?: string
+}
 
 export interface ListEntry {
   name: string
