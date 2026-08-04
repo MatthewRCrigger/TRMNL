@@ -60,6 +60,16 @@ export interface Profile {
   startupCmd: string
   env: { key: string; value: string }[]
   isDefault?: boolean
+  /**
+   * Accent for sessions launched from this profile, or undefined to inherit the
+   * global identity.
+   *
+   * This is how one client's sessions stay recognisably one colour: the profile
+   * carries it, so every shell opened from that profile paints the same, and a
+   * profile that never sets one keeps following the global identity — including
+   * when the identity later changes, which a copied-down colour would not.
+   */
+  accent?: string
 }
 
 export interface Session {
@@ -561,15 +571,18 @@ export const useStore = create<StoreState>((set, get) => ({
           history: entry.history,
         })
       }
-      set((s) => ({
-        panes: {
+      set((s) => {
+        const panes = {
           ...s.panes,
           a: {
             ...s.panes.a,
             active: Math.min(saved.active, Math.max(0, saved.sessions.length - 1)),
           },
-        },
-      }))
+        }
+        // The restored selection is rarely the last session spawned above, so
+        // the colour is resolved once the real active index is in place.
+        return { panes, commandAccent: syncCommandAccent({ ...s, panes }) }
+      })
       return
     }
 
@@ -696,9 +709,10 @@ export const useStore = create<StoreState>((set, get) => ({
     // new accent sweeps the window. --ac is held back to the sweep's midpoint so
     // the trailing half of the band reveals UI that has already repainted; the
     // sweep element calls applyIdentity when it gets there.
-    // A command override is currently painting the UI, so an identity sweep would
-    // advertise a colour that will not appear until that command exits. Change
-    // the setting silently instead; it takes effect on revert.
+    // An override — a running command, or the focused session's profile colour —
+    // is painting the UI, so a sweep would advertise a colour that is not going
+    // to appear. Change the setting silently instead; it shows on any session
+    // that inherits the identity, and on this one if its override goes away.
     const overridden = get().commandAccent !== null
     const sweeping =
       patch.accent !== undefined &&
@@ -747,7 +761,10 @@ export const useStore = create<StoreState>((set, get) => ({
       const idx = s.profiles.findIndex((p) => p.id === profile.id)
       const profiles = idx === -1 ? [...s.profiles, profile] : [...s.profiles]
       if (idx !== -1) profiles[idx] = profile
-      return { profiles }
+      // Editing the colour of the focused session's profile repaints as you
+      // type, so the swatches in Settings preview against the real interface
+      // rather than against themselves.
+      return { profiles, commandAccent: syncCommandAccent({ ...s, profiles }) }
     })
     persist()
   },
@@ -762,6 +779,10 @@ export const useStore = create<StoreState>((set, get) => ({
           selectedProfile:
             s.settings.selectedProfile === id ? (profiles[0]?.id ?? null) : s.settings.selectedProfile,
         },
+        // Sessions launched from the deleted profile keep pointing at an id that
+        // no longer resolves, so their colour has to fall back to the identity
+        // rather than stay stuck on a profile that is gone.
+        commandAccent: syncCommandAccent({ ...s, profiles }),
       }
     })
     persist()
@@ -809,16 +830,20 @@ export const useStore = create<StoreState>((set, get) => ({
       tools: [],
     }
 
-    set((s) => ({
-      sessions: { ...s.sessions, [id]: session },
-      panes: {
+    set((s) => {
+      const sessions = { ...s.sessions, [id]: session }
+      const panes = {
         ...s.panes,
         a: {
           sessions: [...s.panes.a.sessions, id],
           active: s.panes.a.sessions.length,
         },
-      },
-    }))
+      }
+      // An adopted session has no profile — which one spawned it died with the
+      // page — so this resolves to the identity. It still has to run: the
+      // session it just became active over may have been carrying a colour.
+      return { sessions, panes, commandAccent: syncCommandAccent({ ...s, sessions, panes }) }
+    })
 
     const pty = new PtySession(id, cwd, sessionCallbacks(set, id), get().settingsValues.scrollbackCap)
     ptys.set(id, pty)
@@ -867,16 +892,20 @@ export const useStore = create<StoreState>((set, get) => ({
       tools: [],
     }
 
-    set((s) => ({
-      sessions: { ...s.sessions, [id]: session },
-      panes: {
+    set((s) => {
+      const sessions = { ...s.sessions, [id]: session }
+      const panes = {
         ...s.panes,
         [targetPane]: {
           sessions: [...s.panes[targetPane].sessions, id],
           active: s.panes[targetPane].sessions.length,
         },
-      },
-    }))
+      }
+      // A new session lands active, so if its profile carries a colour the
+      // window has to take it now — nothing else will fire until the first
+      // command runs.
+      return { sessions, panes, commandAccent: syncCommandAccent({ ...s, sessions, panes }) }
+    })
 
     const pty = new PtySession(id, cwd, sessionCallbacks(set, id), get().settingsValues.scrollbackCap)
     ptys.set(id, pty)
@@ -948,7 +977,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
       const sessions = { ...s.sessions }
       delete sessions[id]
-      return { panes, sessions }
+      // Whatever the pane fell back to may belong to a different profile, so the
+      // window's colour is resolved against the new selection rather than left
+      // showing the closed session's.
+      return { panes, sessions, commandAccent: syncCommandAccent({ ...s, panes, sessions }) }
     })
 
     // A pane with no sessions left has nothing to render; give it a fresh one so
@@ -1233,19 +1265,35 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * Recompute the command accent from whatever is running in the focused pane.
+ * Recompute the accent override from whatever the focused pane is showing.
  *
  * The accent is a single `:root` variable, so it cannot differ per pane. Scoping
- * it to the *focused* pane's running command is the resolution: the colour tracks
- * where you are looking. A command still running in a background pane does not
- * fight for the theme, and focusing that pane picks its colour up.
+ * it to the *focused* pane is the resolution: the colour tracks where you are
+ * looking. A command still running in a background pane does not fight for the
+ * theme, and focusing that pane picks its colour up.
  *
- * Called on every block update, focus change and settings change. It writes to
- * the DOM only when the resolved colour actually differs, so the common case
- * (output streaming, no colour change) costs one comparison.
+ * Precedence, strongest first:
+ *
+ *   1. A running command's rule — transient, and the most specific thing on
+ *      screen: it says what is happening *right now*.
+ *   2. The session's profile accent — which client this shell belongs to. It
+ *      outlives any one command, so it is what the window returns to.
+ *   3. The global identity, via a null return, meaning "no override".
+ *
+ * Command over profile is deliberate: a client colour that a running `docker`
+ * could not tint would make the command rules useless in exactly the sessions
+ * that do the work, and the command's colour is self-reverting where the
+ * profile's is not.
+ *
+ * Called on every block update, focus change, session change and settings
+ * change. It writes to the DOM only when the resolved colour actually differs,
+ * so the common case (output streaming, no colour change) costs one comparison.
  */
 function syncCommandAccent(
-  state: Pick<StoreState, 'panes' | 'focus' | 'sessions' | 'settingsValues' | 'commandAccent'>,
+  state: Pick<
+    StoreState,
+    'panes' | 'focus' | 'sessions' | 'settingsValues' | 'commandAccent' | 'profiles'
+  >,
 ): string | null {
   const pane = state.panes[state.focus]
   const sessionId = pane.sessions[pane.active]
@@ -1264,6 +1312,8 @@ function syncCommandAccent(
         running.accent ??
         accentFor(running.cmd, state.settingsValues.commandAccents, session.tools)
     }
+    // No command is claiming the window, so the session's own identity shows.
+    next ??= profileAccent(state.profiles, session.profileId)
   }
 
   if (next !== state.commandAccent) {
@@ -1272,13 +1322,31 @@ function syncCommandAccent(
   return next
 }
 
+/**
+ * The accent a session inherits from its profile, or null for the global one.
+ *
+ * Validated at the point of use rather than trusted from the profile: profiles
+ * are hand-editable on disk, and an unparseable `--ac` would propagate through
+ * every color-mix-derived token and leave the whole interface unreadable.
+ */
+export function profileAccent(profiles: Profile[], profileId: string | undefined): string | null {
+  if (!profileId) return null
+  const accent = profiles.find((p) => p.id === profileId)?.accent
+  return accent && isValidColor(accent) ? accent : null
+}
+
 /** Apply the token-level theme to :root. */
 function applyTheme(settings: Settings, override?: string | null): void {
   const root = document.documentElement
   // A command override wins over the configured identity for as long as it runs.
   // `settings.accent` is never mutated, so the user's identity survives untouched
   // and reverting is just dropping the override.
-  root.style.setProperty('--ac', override ?? settings.accent)
+  //
+  // Writes --ac-raw, not --ac: tokens.css derives --ac from it with a lightness
+  // floor, so a colour too dark to see becomes visible rather than dissolving
+  // every hairline. Setting --ac here would overwrite that derivation and skip
+  // the floor entirely.
+  root.style.setProperty('--ac-raw', override ?? settings.accent)
   root.dataset.density = settings.density
 }
 

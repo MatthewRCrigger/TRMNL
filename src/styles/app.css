@@ -90,7 +90,7 @@
   font-weight: 500;
   font-size: var(--t-micro);
   letter-spacing: 0.12em;
-  color: var(--ac);
+  color: var(--act);
   white-space: nowrap;
 }
 
@@ -114,10 +114,10 @@
 .layoutbtn[data-active='true'] {
   background: var(--wash);
   border-color: var(--bd);
-  color: var(--ac);
+  color: var(--act);
 }
 
-.layoutbtn:hover { color: var(--ac); border-color: var(--bd); }
+.layoutbtn:hover { color: var(--act); border-color: var(--bd); }
 
 .layoutbtn__glyph {
   display: block;
@@ -149,7 +149,7 @@
 }
 
 .titlebar__palette:hover { border-color: var(--ac); }
-.titlebar__palette:hover .titlebar__palettetext { color: var(--ac); }
+.titlebar__palette:hover .titlebar__palettetext { color: var(--act); }
 
 .titlebar__identity {
   display: flex;
@@ -166,7 +166,7 @@
   transition: border-color 0.16s, color 0.16s;
 }
 
-.titlebar__identity:hover { border-color: var(--bd); color: var(--ac); }
+.titlebar__identity:hover { border-color: var(--bd); color: var(--act); }
 
 .titlebar__swatch {
   width: 11px;
@@ -268,7 +268,7 @@
 .rail__row:hover .rail__close { opacity: 1; }
 .rail__close:hover { color: var(--err); border-color: var(--err); }
 
-.rail__count { color: var(--ac); }
+.rail__count { color: var(--act); }
 
 .rail__new,
 .dashed {
@@ -286,7 +286,7 @@
 }
 
 .rail__new:hover,
-.dashed:hover { color: var(--ac); border-color: var(--ac); }
+.dashed:hover { color: var(--act); border-color: var(--ac); }
 
 .dashed--inline {
   width: auto;
@@ -326,10 +326,10 @@
 .rail__tile[data-active='true'] {
   background: var(--wash);
   border-color: var(--bd);
-  color: var(--ac);
+  color: var(--act);
 }
 
-.rail__tile:hover { color: var(--ac); }
+.rail__tile:hover { color: var(--act); }
 
 .rail__tiledot {
   position: absolute;
@@ -356,7 +356,7 @@
   font-feature-settings: 'tnum' 1;
 }
 
-.rail__footcpu { color: var(--ac); }
+.rail__footcpu { color: var(--act); }
 .rail__footmem { color: var(--fgdd); }
 
 /* Telemetry footer */
@@ -429,7 +429,7 @@
 .rail__sval {
   grid-area: value;
   text-align: right;
-  color: var(--ac);
+  color: var(--act);
   white-space: nowrap;
 }
 
@@ -477,7 +477,7 @@
   transition: color 0.16s;
 }
 
-.rail__toggle:hover { color: var(--ac); }
+.rail__toggle:hover { color: var(--act); }
 
 /* --- Panes ---------------------------------------------------------------- */
 
@@ -556,7 +556,7 @@
   transition: color 0.16s, border-color 0.16s;
 }
 
-.pane__close:hover { color: var(--ac); border-color: var(--ac); }
+.pane__close:hover { color: var(--act); border-color: var(--ac); }
 
 .pane__body {
   position: relative;
@@ -584,7 +584,7 @@
   font-weight: 500;
   font-size: var(--t-label);
   letter-spacing: 0.14em;
-  color: var(--ac);
+  color: var(--act);
   box-shadow: 0 8px 22px -10px #000;
 }
 
@@ -801,7 +801,7 @@
 }
 
 .block__prompt {
-  color: var(--ac);
+  color: var(--act);
   font-size: 12.5px;
   flex: none;
 }
@@ -855,7 +855,7 @@
   transition: color 0.16s, border-color 0.16s;
 }
 
-.block__action:hover { color: var(--ac); border-color: var(--ac); }
+.block__action:hover { color: var(--act); border-color: var(--ac); }
 
 .block__cancel {
   flex: none;
@@ -891,7 +891,7 @@
   font-weight: 500;
   font-size: var(--t-micro);
   letter-spacing: 0.12em;
-  color: var(--ac);
+  color: var(--act);
 }
 
 /* Success reads as part of the bar. */
@@ -958,7 +958,7 @@
   transition: color 0.16s;
 }
 
-.block__fold:hover { color: var(--ac); }
+.block__fold:hover { color: var(--act); }
 
 /* --- Structured output ---------------------------------------------------- */
 
@@ -970,7 +970,7 @@
 }
 
 .sx__summary { color: var(--fg); margin-bottom: 9px; }
-.sx__ok { color: var(--ac); }
+.sx__ok { color: var(--act); }
 
 .sx__foot {
   margin-top: 7px;
@@ -1025,7 +1025,7 @@
 .sx-list__link {
   font-family: var(--mono);
   font-size: inherit;
-  color: var(--ac);
+  color: var(--act);
   text-align: left;
   transition: text-decoration-color 0.16s;
   text-decoration: underline;
@@ -1045,7 +1045,7 @@
 .sx-table__row[data-hidden='true'] .sx-list__link { color: var(--fgd); }
 .sx-table__row[data-hidden='true'] { opacity: 0.62; }
 
-.sx-table__marker[data-kind='dir'] { color: var(--ac); }
+.sx-table__marker[data-kind='dir'] { color: var(--act); }
 .sx-table__marker[data-kind='exec'] { color: var(--warn); }
 .sx-table__marker[data-kind='link'] { color: var(--fgd); }
 
@@ -1064,7 +1064,7 @@
   color: var(--fg);
 }
 
-.sx-git__add { color: var(--ac); }
+.sx-git__add { color: var(--act); }
 .sx-git__del { color: var(--err); }
 
 .sx-git__actions {
@@ -1082,7 +1082,7 @@
   font-weight: 500;
   font-size: var(--t-label);
   letter-spacing: 0.14em;
-  color: var(--ac);
+  color: var(--act);
   transition: background 0.16s;
 }
 
@@ -1094,7 +1094,7 @@
   color: var(--fgdd);
 }
 
-.sx__btn--ghost:hover { color: var(--ac); border-color: var(--bd); background: transparent; }
+.sx__btn--ghost:hover { color: var(--act); border-color: var(--bd); background: transparent; }
 
 .sx-git__branch { font-size: var(--t-micro); color: var(--fgdd); }
 
@@ -1106,7 +1106,7 @@
   font-weight: 500;
   font-size: var(--t-micro);
   letter-spacing: 0.14em;
-  color: var(--ac);
+  color: var(--act);
   text-transform: uppercase;
 }
 
@@ -1122,7 +1122,7 @@
 
 .sx-serve__row:last-child { border-bottom: none; }
 .sx-serve__label { width: 120px; flex: none; }
-.sx-serve__url { flex: 1; color: var(--ac); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sx-serve__url { flex: 1; color: var(--act); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .sx-serve__open {
   flex: none;
@@ -1133,7 +1133,7 @@
   transition: color 0.16s;
 }
 
-.sx-serve__open:hover { color: var(--ac); }
+.sx-serve__open:hover { color: var(--act); }
 
 .sx-serve__hints {
   display: flex;
@@ -1177,7 +1177,7 @@
   border: 1px solid var(--bd);
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--ac);
+  color: var(--act);
   transition: background 0.16s;
 }
 
@@ -1257,7 +1257,7 @@
 }
 
 .composer__prompt {
-  color: var(--ac);
+  color: var(--act);
   font-size: 13px;
   flex: none;
 }
@@ -1381,7 +1381,7 @@
   font-weight: 900;
   font-size: 24px;
   letter-spacing: 0.2em;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .welcome__ver {
@@ -1442,7 +1442,7 @@
 
 .welcome__cmd:hover { border-color: var(--ac); background: var(--wash); }
 
-.welcome__chev { color: var(--ac); flex: none; }
+.welcome__chev { color: var(--act); flex: none; }
 
 .welcome__cmdtext {
   flex: 1;
@@ -1468,7 +1468,7 @@
   transition: color 0.16s;
 }
 
-.welcome__recent:hover .welcome__cmdtext { color: var(--ac); }
+.welcome__recent:hover .welcome__cmdtext { color: var(--act); }
 
 .welcome__hints {
   display: flex;
@@ -1529,7 +1529,7 @@
   font-weight: 500;
   font-size: var(--t-micro);
   letter-spacing: 0.2em;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .palette__input {
@@ -1574,7 +1574,7 @@
   white-space: nowrap;
 }
 
-.palette__item[data-active='true'] .palette__label { color: var(--ac); }
+.palette__item[data-active='true'] .palette__label { color: var(--act); }
 
 .palette__desc {
   font-family: var(--mono);
@@ -1632,7 +1632,7 @@
 .popover__kbd {
   font-family: var(--mono);
   font-size: var(--t-micro);
-  color: var(--ac);
+  color: var(--act);
 }
 
 .popover__section {
@@ -1662,8 +1662,8 @@
   transition: color 0.16s, background 0.16s;
 }
 
-.popover__all:hover { color: var(--ac); background: var(--wash2); }
-.popover__arrow { color: var(--ac); }
+.popover__all:hover { color: var(--act); background: var(--wash2); }
+.popover__arrow { color: var(--act); }
 
 /* --- Swatches ------------------------------------------------------------- */
 
@@ -1700,7 +1700,7 @@
   text-align: left;
 }
 
-.swatch[data-selected='true'] .swatch__name { color: var(--ac); }
+.swatch[data-selected='true'] .swatch__name { color: var(--act); }
 
 .swatch__value {
   font-family: var(--mono);
@@ -1729,8 +1729,8 @@
 }
 
 .segmented__seg:last-child { border-right: none; }
-.segmented__seg[data-active='true'] { background: var(--wash); color: var(--ac); }
-.segmented__seg:hover { color: var(--ac); }
+.segmented__seg[data-active='true'] { background: var(--wash); color: var(--act); }
+.segmented__seg:hover { color: var(--act); }
 
 .segmented--auto .segmented__seg { padding: 7px 14px; }
 
@@ -1799,7 +1799,7 @@
   font-weight: 700;
   font-size: 11px;
   letter-spacing: 0.24em;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .settings__path {
@@ -1821,7 +1821,7 @@
   transition: color 0.16s, border-color 0.16s;
 }
 
-.settings__close:hover { color: var(--ac); border-color: var(--ac); }
+.settings__close:hover { color: var(--act); border-color: var(--ac); }
 
 .settings__body { display: flex; flex: 1; min-height: 0; }
 
@@ -1850,10 +1850,10 @@
 .settings__navrow[data-active='true'] {
   border-left-color: var(--ac);
   background: var(--wash);
-  color: var(--ac);
+  color: var(--act);
 }
 
-.settings__navrow:hover { color: var(--ac); }
+.settings__navrow:hover { color: var(--act); }
 
 .settings__pane {
   flex: 1;
@@ -1881,7 +1881,7 @@
   font-weight: 500;
   font-size: var(--t-micro);
   letter-spacing: 0.1em;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .settings__esc {
@@ -1937,7 +1937,7 @@
   white-space: nowrap;
 }
 
-.profiles__row[data-active='true'] .profiles__name { color: var(--ac); }
+.profiles__row[data-active='true'] .profiles__name { color: var(--act); }
 
 .profiles__dir {
   font-family: var(--mono);
@@ -1988,7 +1988,7 @@
 .form__row .btn { flex: none; white-space: nowrap; }
 
 .form__input:focus { border-color: var(--bd); }
-.form__input--accent { color: var(--ac); }
+.form__input--accent { color: var(--act); }
 .form__input::placeholder { color: var(--fgdd); }
 
 .env { margin-bottom: 24px; }
@@ -2003,7 +2003,7 @@
   border: 1px solid var(--bd2);
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .env__value {
@@ -2056,24 +2056,63 @@
   margin-bottom: 7px;
 }
 
-/* The swatch is a readout, not a control — a picker would need a colour dialog
-   the design does not specify, so the oklch field stays the sole input. When the
-   value is unreadable the chip goes hollow rather than showing a stale colour. */
-.ccolors__chip {
+/* --- Colour field: swatch opens the system picker, hex box mirrors it ------ */
+
+.cfield { display: flex; align-items: center; gap: 7px; }
+
+/* The well is what the user sees and clicks; the real control sits inside it,
+   invisible, because `input[type=color]` cannot be styled but is the only thing
+   that opens the native picker. */
+.cfield__well {
+  position: relative;
   width: 26px;
   height: 26px;
   flex: none;
   border: 1px solid var(--bd2);
-}
-
-.ccolors__chip[data-valid='false'] {
+  overflow: hidden;
+  /* No value yet: a hatch rather than a stale or misleading colour. */
   background: repeating-linear-gradient(
     135deg,
     transparent 0 3px,
-    color-mix(in oklch, var(--err) 45%, transparent) 3px 4px
+    color-mix(in oklch, var(--fgdd) 35%, transparent) 3px 4px
   );
-  border-color: color-mix(in oklch, var(--err) 40%, transparent);
+  transition: border-color 0.16s;
 }
+
+.cfield__well:hover { border-color: var(--bd); }
+
+.cfield__native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Keyboard focus lands on the hidden input, so the ring has to be drawn by the
+   well around it or the control looks unfocusable. */
+.cfield__native:focus-visible + *,
+.cfield__well:has(.cfield__native:focus-visible) { border-color: var(--ac); }
+
+.cfield__hex {
+  width: 92px;
+  flex: none;
+  padding: 7px 10px;
+  background: var(--well);
+  border: 1px solid var(--bd2);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--fgd);
+  text-transform: lowercase;
+  transition: border-color 0.16s, color 0.16s;
+}
+
+.cfield__hex:focus { border-color: var(--bd); }
+.cfield__hex::placeholder { color: var(--fgdd); }
 
 .ccolors__match {
   width: 128px;
@@ -2083,7 +2122,7 @@
   border: 1px solid var(--bd2);
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .ccolors__label {
@@ -2097,32 +2136,11 @@
   color: var(--fgd);
 }
 
-.ccolors__color {
-  width: 168px;
-  flex: none;
-  padding: 7px 10px;
-  background: var(--well);
-  border: 1px solid var(--bd2);
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  color: var(--fgd);
-  transition: border-color 0.16s, color 0.16s;
-}
-
 .ccolors__match:focus,
-.ccolors__label:focus,
-.ccolors__color:focus { border-color: var(--bd); }
+.ccolors__label:focus { border-color: var(--bd); }
 
 .ccolors__match::placeholder,
-.ccolors__label::placeholder,
-.ccolors__color::placeholder { color: var(--fgdd); }
-
-/* A typo must be visible before it reaches --ac and takes the theme with it. */
-.ccolors__color[data-invalid='true'],
-.ccolors__color[data-invalid='true']:focus {
-  border-color: var(--err);
-  color: var(--err);
-}
+.ccolors__label::placeholder { color: var(--fgdd); }
 
 .ccolors__del {
   width: 28px;
@@ -2135,6 +2153,49 @@
 }
 
 .ccolors__del:hover { color: var(--err); border-color: var(--err); }
+
+/* --- Per-profile accent ---------------------------------------------------- */
+
+.paccent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+.paccent__picks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+.paccent__pick,
+.paccent__custombtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--bd2);
+  background: var(--well);
+  font-family: var(--ui);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  color: var(--fgdd);
+  transition: color 0.16s, border-color 0.16s, background 0.16s;
+}
+
+.paccent__pick:hover,
+.paccent__custombtn:hover { color: var(--fg); border-color: var(--bd); }
+
+.paccent__pick[data-selected='true'],
+.paccent__custombtn[data-selected='true'] {
+  background: var(--wash);
+  border-color: var(--bd);
+  color: var(--act);
+}
+
+/* The chip is the only place a profile's colour appears at full strength while
+ * it is not the active one, so it is not washed back like the label. */
+.paccent__chip {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 1px;
+}
+
+/* The warning owns the row under the controls rather than sitting inline. */
+.paccent .warnrow { flex-basis: 100%; }
 
 .profiles__actions { display: flex; align-items: center; gap: 9px; }
 
@@ -2149,9 +2210,9 @@
   transition: color 0.16s, border-color 0.16s, background 0.16s;
 }
 
-.btn:hover { color: var(--ac); border-color: var(--bd); }
-.btn--primary { background: var(--wash); border-color: var(--bd); color: var(--ac); }
-.btn[data-lit='true'] { color: var(--ac); border-color: var(--bd); }
+.btn:hover { color: var(--act); border-color: var(--bd); }
+.btn--primary { background: var(--wash); border-color: var(--bd); color: var(--act); }
+.btn[data-lit='true'] { color: var(--act); border-color: var(--bd); }
 .btn--danger { color: var(--err); border-color: color-mix(in oklch, var(--err) 30%, transparent); }
 .btn--danger:hover { color: var(--err); border-color: var(--err); background: color-mix(in oklch, var(--err) 10%, transparent); }
 
@@ -2197,7 +2258,7 @@
 }
 
 .stepper__btn:last-child { border-right: none; border-left: 1px solid var(--bd2); }
-.stepper__btn:hover { color: var(--ac); }
+.stepper__btn:hover { color: var(--act); }
 
 .stepper__val {
   display: grid;
@@ -2205,7 +2266,7 @@
   min-width: 40px;
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .stepper__suffix { flex: none; }
@@ -2256,7 +2317,7 @@
   font-family: var(--mono);
   font-weight: 500;
   font-size: 10.5px;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .keys__action { flex: 1; font-family: var(--mono); font-size: 11.5px; color: var(--fgd); }
@@ -2310,7 +2371,7 @@
   font-weight: 900;
   font-size: 24px;
   letter-spacing: 0.2em;
-  color: var(--ac);
+  color: var(--act);
   animation: bootwd 320ms cubic-bezier(0.2, 0.9, 0.25, 1) 60ms both;
 }
 
@@ -2359,7 +2420,7 @@
   font-family: var(--mono);
   font-size: var(--t-micro);
   font-variant-numeric: tabular-nums;
-  color: var(--ac);
+  color: var(--act);
 }
 
 .search__step,
@@ -2376,7 +2437,7 @@
 }
 
 .search__step:hover:not(:disabled),
-.search__close:hover { color: var(--ac); border-color: var(--ac); }
+.search__close:hover { color: var(--act); border-color: var(--ac); }
 .search__step:disabled { opacity: 0.35; }
 
 .search__results { max-height: 260px; overflow-y: auto; }
@@ -2582,7 +2643,7 @@
   white-space: nowrap;
 }
 
-.ctxmenu__item:hover .ctxmenu__label { color: var(--ac); }
+.ctxmenu__item:hover .ctxmenu__label { color: var(--act); }
 
 .ctxmenu__kbd {
   font-family: var(--mono);
@@ -2634,4 +2695,4 @@
   border: 1px solid var(--bd);
 }
 
-.pane__deadact:hover { color: var(--ac); border-color: var(--ac); }
+.pane__deadact:hover { color: var(--act); border-color: var(--ac); }
