@@ -52,39 +52,18 @@
   --ac: oklch(from var(--ac-raw) max(l, 0.62) c h);
   --acd: color-mix(in oklch, var(--ac) 55%, #000);
 
-  /* The accent as *text*, floored higher.
+  /* The accent as *text*, floored higher than the structural one above.
    *
-   * Fills only need to be visible; text has to be readable. 0.7 clears 7:1
-   * (WCAG AAA) against --page at every hue, while leaving all five shipped
-   * identities untouched — they already sit above it.
+   * Fills only need to be visible; text has to be readable. A deep navy lands at
+   * 1.5:1 against --page — invisible rather than merely low-contrast — and the
+   * 0.62 structural floor only lifts it to 5.4:1. 0.7 clears 7:1 (WCAG AAA) at
+   * every hue while leaving all five shipped identities untouched, since they
+   * already sit above it.
    *
    * Deliberately not `contrast-color()`, which is supported in this webview but
    * answers a different question: it returns black or white for text on a given
    * background, whereas this is accent-coloured text on a fixed dark surface.
    * Using it would discard the accent and paint every lit control plain white.
-   */
-  --act: oklch(from var(--ac) max(l, 0.7) c h);
-
-  /* The accent as *text*, with a lightness floor.
-   *
-   * `--ac` is used two ways: as a fill (hairlines, washes, chips), where any
-   * lightness is fine, and as foreground text on the near-black surfaces, where
-   * a dark accent is simply unreadable. The five shipped identities all sit
-   * high enough that this never mattered, but the colour picker makes an
-   * arbitrary colour one click away — a deep navy lands at 1.5:1 against
-   * --page, which is invisible rather than merely low-contrast.
-   *
-   * Relative colour syntax lifts only L, so the user's hue and chroma survive
-   * and the colour still reads as the one they chose. 0.7 is the floor because
-   * it clears 7:1 (WCAG AAA) against --page for every hue, while leaving all
-   * five identities untouched — the lightest problem case measured 5.4:1 at
-   * 0.62, and 0.7 buys the margin without visibly washing anything out.
-   *
-   * Deliberately not `contrast-color()`, which is supported here but answers a
-   * different question: it returns black or white for text on a given
-   * background, whereas this is accent-coloured text on a fixed dark surface.
-   * Using it would discard the accent entirely and paint every lit control
-   * plain white.
    */
   --act: oklch(from var(--ac) max(l, 0.7) c h);
 

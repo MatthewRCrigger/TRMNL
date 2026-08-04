@@ -336,6 +336,15 @@ Two things worth knowing:
   profile env vars let a user inject `DYLD_*` into spawned shells. Removing
   those breaks shell spawning only in signed builds, never in `tauri dev`.
 
+- **Bundling the `.dmg` needs Automation permission.** `bundle_dmg.sh` runs
+  `osascript` to have Finder lay out the mounted volume, and Tauri swallows its
+  output — so a denied permission appears only as `failed to bundle project:
+  error running bundle_dmg.sh`, with nothing pointing at Finder. Check with
+  `osascript -e 'tell application "Finder" to get name of startup disk'` and
+  grant it under System Settings → Privacy & Security → Automation. The step is
+  purely cosmetic; `--skip-jenkins` produces a plain but working image where the
+  permission cannot be granted, such as CI.
+
 Verify a build with:
 
 ```bash
