@@ -1,7 +1,17 @@
 {
   "name": "trmnl",
-  "private": true,
   "version": "0.4.1",
+  "description": "A TRON-inspired terminal for macOS, with a block-based command model.",
+  "license": "MIT",
+  "author": "Matthew Crigger",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MatthewRCrigger/TRMNL.git"
+  },
+  "homepage": "https://github.com/MatthewRCrigger/TRMNL",
+  "bugs": {
+    "url": "https://github.com/MatthewRCrigger/TRMNL/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
