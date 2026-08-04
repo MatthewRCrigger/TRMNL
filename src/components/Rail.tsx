@@ -177,7 +177,10 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
   const focus = useStore((s) => s.focus)
   const activateSession = useStore((s) => s.activateSession)
   const closeSession = useStore((s) => s.closeSession)
+  const renameSession = useStore((s) => s.renameSession)
   const profiles = useStore((s) => s.profiles)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
 
   if (!session) return null
   const count = session.blocks.length
@@ -185,6 +188,11 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
   // The list is where several clients sit side by side, so each row shows its
   // own colour rather than all of them showing the focused session's --ac.
   const accent = profileAccent(profiles, session.profileId)
+
+  const commitRename = () => {
+    setEditing(false)
+    renameSession(id, draft)
+  }
 
   return (
     // A row is a div rather than a button so the close control can nest inside it
@@ -209,7 +217,38 @@ function SessionRow({ id, index, active }: { id: string; index: number; active: 
         className="dot"
         style={{ color: remote ? 'var(--warn)' : (accent ?? 'var(--ac)') }}
       />
-      <span className="rail__name">{session.name}</span>
+      {editing ? (
+        <input
+          className="rail__name rail__name-edit"
+          value={draft}
+          autoFocus
+          // The row's own click would otherwise re-activate on the same
+          // gesture that opened the field, and steal focus right back out of it.
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitRename()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              setEditing(false)
+            }
+          }}
+        />
+      ) : (
+        <span
+          className="rail__name"
+          onDoubleClick={(e) => {
+            e.stopPropagation()
+            setDraft(session.name)
+            setEditing(true)
+          }}
+        >
+          {session.name}
+        </span>
+      )}
       {/* A remote session is a tunnel to somewhere else; the glyph says so at a
           glance without spending the width a hostname would. */}
       {remote && <span className="rail__link" aria-label="remote">⇄</span>}

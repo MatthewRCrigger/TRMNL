@@ -256,6 +256,8 @@ interface StoreState {
   /** Kill a session's shell and drop it from its pane. */
   closeSession: (id: string) => Promise<void>
   activateSession: (pane: PaneId, index: number) => void
+  /** User override of a session's name, independent of its profile from then on. */
+  renameSession: (id: string, name: string) => void
   setSessionInput: (id: string, input: string) => void
   /** Record the grid a pane just reported, so the window title can name it. */
   setSessionSize: (id: string, cols: number, rows: number) => void
@@ -1067,6 +1069,14 @@ export const useStore = create<StoreState>((set, get) => ({
     set((s) => {
       const panes = { ...s.panes, [pane]: { ...s.panes[pane], active: index } }
       return { panes, commandAccent: syncCommandAccent({ ...s, panes }) }
+    }),
+
+  renameSession: (id, name) =>
+    set((s) => {
+      const session = s.sessions[id]
+      const trimmed = name.trim()
+      if (!session || !trimmed) return s
+      return { sessions: { ...s.sessions, [id]: { ...session, name: trimmed } } }
     }),
 
   setSessionInput(id, input) {

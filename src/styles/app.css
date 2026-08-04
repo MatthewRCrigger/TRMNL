@@ -278,7 +278,17 @@
 
 .rail__row[data-active='true'] .rail__name { color: var(--fg); }
 
-.rail__row { cursor: default; }
+.rail__name-edit {
+  border: 1px solid var(--ac);
+  background: var(--wash2);
+  padding: 0 3px;
+  margin: -1px 0;
+  border-radius: 2px;
+}
+
+.rail__name-edit:focus { outline: none; }
+
+.rail__row { cursor: pointer; }
 
 /* Badge and close button occupy the same cell, so revealing the close control on
  * hover cannot shift the row. */
@@ -286,34 +296,48 @@
   position: relative;
   flex: none;
   display: grid;
-  min-width: 22px;
+  width: 22px;
+  height: 22px;
   justify-items: end;
 }
 
 .rail__badge {
   grid-area: 1 / 1;
+  z-index: 1;
   font-family: var(--mono);
   font-size: var(--t-micro);
   color: var(--fgdd);
   transition: opacity 0.16s;
 }
 
-/* Hidden until the row is hovered, then already lit — the reveal is the
- * discoverability signal here, so the button does not also need to be dull. A
- * permanently visible close on every row would put a red x down the whole rail. */
+/* Always present and hit-testable — never gated behind opacity: 0 or a parent
+ * :hover, either of which let the button's own hover state lose a race against
+ * the row's on a cursor move and made it miss clicks. The border is what was
+ * drawing a red square on every row at rest; dropping it (and the fill) until
+ * hover keeps the button truly invisible at rest while staying targetable, so
+ * there is always something under the cursor to click without painting the
+ * whole rail red. */
 .rail__close {
   grid-area: 1 / 1;
   display: grid;
   place-items: center;
-  width: 15px;
-  height: 15px;
-  font-size: 9px;
-  opacity: 0;
-  transition: opacity 0.16s, color 0.16s, border-color 0.16s, background-color 0.16s;
+  width: 100%;
+  height: 100%;
+  font-size: 10px;
+  border-color: transparent;
+  color: transparent;
+  transition: color 0.16s, border-color 0.16s, background-color 0.16s;
+}
+
+/* Restores the .is-btn--danger outline that the resting-state override above
+ * blanks out — :hover further down still wins over this, so the fill-on-hover
+ * from .is-btn--danger keeps working unchanged. */
+.rail__row:hover .rail__close {
+  border-color: var(--err);
+  color: var(--err);
 }
 
 .rail__row:hover .rail__badge { opacity: 0; }
-.rail__row:hover .rail__close { opacity: 1; }
 
 .rail__count { color: var(--act); }
 
