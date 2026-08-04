@@ -17,6 +17,12 @@ import {
   isValidColor,
   type CommandAccent,
 } from '../lib/commandAccent'
+import {
+  resolveKeybindings,
+  sanitizeKeybindingOverrides,
+  type ActionId,
+  type KeybindingOverrides,
+} from '../lib/keybindings'
 import { notifyComplete, shouldNotify } from '../lib/notify'
 import {
   createSessionIds,
@@ -133,6 +139,9 @@ export interface Settings {
   scrollbackCap: number
   /** Per-command accent overrides; see lib/commandAccent.ts. */
   commandAccents: CommandAccent[]
+  /** User overrides of the JS-handled chords in lib/keybindings.ts. A missing
+   *  action falls back to its shipped default — see resolveKeybindings. */
+  keybindings: KeybindingOverrides
 }
 
 export interface HostInfo {
@@ -214,6 +223,17 @@ interface StoreState {
   updateSettings: (
     patch: Partial<Omit<Settings, 'renderers'>> & { renderers?: Partial<Record<RendererId, boolean>> },
   ) => void
+  /**
+   * Rebind one action's chord. Collision checking happens in the UI before
+   * this is called — this just commits it.
+   *
+   * When `swapWith` is given (the user confirmed taking a chord that was
+   * already in use), that other action is reassigned the chord `action` is
+   * giving up, rather than being left with no chord at all — every action
+   * always resolves to exactly one, and the global handler has no notion of
+   * "unbound".
+   */
+  setKeybinding: (action: ActionId, chord: string, swapWith?: ActionId) => void
   /** Accent forced by a running command, or null when none is active. */
   commandAccent: string | null
   /** Nonce+colour for the identity sweep; null when no sweep is in flight. */
@@ -265,6 +285,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bootSequence: true,
   scrollbackCap: 10_000,
   commandAccents: DEFAULT_COMMAND_ACCENTS,
+  keybindings: {},
 }
 
 /** Live PTY sessions, keyed by session id. Outside the store — not serialisable. */
@@ -759,6 +780,16 @@ export const useStore = create<StoreState>((set, get) => ({
       // behind the one in flight, so five fast switches land on the fifth colour.
       set({ identitySweep: { id: sweepNonce++, color: next.accent } })
     }
+  },
+
+  setKeybinding(action, chord, swapWith) {
+    set((s) => {
+      const resolved = resolveKeybindings(s.settingsValues.keybindings)
+      const overrides: KeybindingOverrides = { ...s.settingsValues.keybindings, [action]: chord }
+      if (swapWith) overrides[swapWith] = resolved[action]
+      return { settingsValues: { ...s.settingsValues, keybindings: overrides } }
+    })
+    persist()
   },
 
   /** Midpoint of the sweep: commit the accent that the band is carrying. */
@@ -1274,6 +1305,7 @@ export function pickSettings(stored: Partial<Settings> | undefined): Settings {
       typeof stored.scrollbackCap === 'number' && stored.scrollbackCap > 0
         ? stored.scrollbackCap
         : DEFAULT_SETTINGS.scrollbackCap,
+    keybindings: sanitizeKeybindingOverrides(stored.keybindings),
   }
 }
 
