@@ -11,6 +11,7 @@
     "app": "tauri dev",
     "app:build": "tauri build",
     "app:release": "./scripts/release.sh",
+    "app:install": "./scripts/install-local.sh",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
