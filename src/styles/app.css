@@ -1185,6 +1185,36 @@
 
 .sx-serve__key { color: var(--fgd); }
 
+.sx-test__summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.sx-test__stat { font-size: var(--t-label); }
+.sx-test__duration { color: var(--fgdd); margin-left: auto; }
+
+.sx-test__failures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.sx-test__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  background: var(--wash2);
+  border: 1px solid var(--bd2);
+  color: var(--fg);
+}
+
+.sx-test__suite { color: var(--fgdd); }
+
 .sx-err {
   padding: 13px 16px;
   background: color-mix(in oklch, var(--err) 8%, transparent);

@@ -252,7 +252,7 @@ export const DEFAULT_SETTINGS: Settings = {
   identityName: DEFAULT_IDENTITY.name,
   density: 'normal',
   foldThreshold: 9,
-  renderers: { build: true, git: true, serve: true, err: true, list: true },
+  renderers: { build: true, git: true, serve: true, err: true, list: true, test: true },
   ghostSource: 'scripts',
   restoreOnLaunch: true,
   bootSequence: true,
