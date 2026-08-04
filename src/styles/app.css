@@ -830,6 +830,21 @@
   -webkit-user-select: text;
 }
 
+/* A bare URL detected in output — see term/linkify.ts. Always shown as a link
+ * (underline + accent) rather than only on ⌘-hover: CSS has no way to read a
+ * modifier key, and an affordance that only appears once you already know to
+ * hold ⌘ is not much of an affordance. Plain click still selects text like any
+ * other span here; only ⌘-click opens it (see LineContent in Block.tsx). */
+.block__link {
+  color: var(--act);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--act) 40%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.block__link:hover { text-decoration-color: var(--act); }
+
 /* Part of the container: its own divided band under the output rather than a
  * button floating loose beneath it. */
 .block__fold {
@@ -1668,6 +1683,51 @@
 }
 
 .toggle[data-on='true'] .toggle__knob { background: var(--ac); }
+
+/* --- Close confirmation ----------------------------------------------------- */
+
+.closeconfirm {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 420px;
+  max-width: calc(100% - 40px);
+  padding: 18px 20px;
+  background: color-mix(in oklch, var(--card) 96%, transparent);
+  border: 1px solid var(--bd);
+  box-shadow: 0 24px 60px -12px #000;
+  backdrop-filter: blur(10px);
+}
+
+.closeconfirm__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.closeconfirm__head .micro { color: var(--warn); }
+
+.closeconfirm__body {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fgd);
+}
+
+.closeconfirm__body code {
+  font-family: var(--mono);
+  color: var(--act);
+}
+
+.closeconfirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 
 /* --- Settings window ------------------------------------------------------ */
 

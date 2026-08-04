@@ -1,7 +1,9 @@
 /** One command execution, rendered as an addressable unit. */
 
 import { memo, useEffect, useState } from 'react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 
+import { hasLink, linkify } from '../term/linkify'
 import {
   blockState,
   blockToMarkdown,
@@ -191,9 +193,10 @@ export const Block = memo(function Block({
               <div
                 key={i}
                 className="block__line"
+                data-line-text={line.text}
                 style={{ color: TONE_VAR[line.tone] ?? 'var(--fg)' }}
               >
-                {line.text || ' '}
+                {line.text ? (hasLink(line.text) ? <LineContent text={line.text} /> : line.text) : ' '}
               </div>
             ))}
           </div>
@@ -208,3 +211,39 @@ export const Block = memo(function Block({
     </div>
   )
 })
+
+/**
+ * One line's text, with any bare URLs split out as clickable spans.
+ *
+ * Plain click still falls through to normal text selection — a link inside
+ * scrollback is still text you may want to select and copy, and a bare click
+ * opening it would fight click-drag the moment a URL sits under the pointer.
+ * ⌘-click is the escape hatch that means "no, actually open this", matching
+ * how Terminal.app, iTerm2 and VS Code's terminal all treat it.
+ */
+function LineContent({ text }: { text: string }) {
+  const tokens = linkify(text)
+  return (
+    <>
+      {tokens.map((token, i) =>
+        token.kind === 'link' ? (
+          <span
+            key={i}
+            className="block__link"
+            data-url={token.url}
+            title="⌘-click to open"
+            onClick={(e) => {
+              if (!e.metaKey) return
+              e.stopPropagation()
+              void openUrl(token.url).catch(() => {})
+            }}
+          >
+            {token.text}
+          </span>
+        ) : (
+          <span key={i}>{token.text}</span>
+        ),
+      )}
+    </>
+  )
+}

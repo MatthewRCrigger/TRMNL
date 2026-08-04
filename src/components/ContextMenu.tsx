@@ -11,11 +11,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { useStore, type Profile, type Session } from '../state/store'
+import { getTakeoverLinkState } from '../term/takeoverLinks'
 import { DEFAULT_PROFILE_NAME, folderName } from './Settings'
 
 interface Point {
   x: number
   y: number
+}
+
+/** What was actually under the cursor when the menu was opened, if anything
+ *  worth offering a copy action for — a line of output, and/or a link inside
+ *  it. Plain right-clicks on chrome (header, composer, empty space) carry
+ *  neither, same as before this existed.
+ *
+ *  `lineText`/`linkUrl` come from the block stream (a real DOM element carries
+ *  the text). `selection` is the takeover-terminal equivalent: xterm.js owns
+ *  its own grid, not a DOM one, so there is no line to read — only whatever is
+ *  currently selected in it. See term/takeoverLinks.ts. */
+interface ClickTarget {
+  lineText?: string
+  linkUrl?: string
+  selection?: string
 }
 
 interface Entry {
@@ -75,6 +91,7 @@ function samePath(a: string, b: string, homeDir: string | undefined): boolean {
 
 export function ContextMenu() {
   const [at, setAt] = useState<Point | null>(null)
+  const [clickTarget, setClickTarget] = useState<ClickTarget>({})
   const menuRef = useRef<HTMLDivElement>(null)
   const [placed, setPlaced] = useState<Point | null>(null)
 
@@ -100,6 +117,23 @@ export function ContextMenu() {
       if (target?.closest('input, textarea, [contenteditable="true"]')) return
 
       event.preventDefault()
+      // A link span sits inside a line, so it's checked first — right-clicking
+      // the URL itself should offer "Copy Link" *and* "Copy Text" for the line
+      // it's part of, not just one or the other.
+      const link = target?.closest<HTMLElement>('.block__link')
+      const line = target?.closest<HTMLElement>('.block__line')
+      // A takeover terminal (vim, shopify theme dev, …) is a canvas, not a DOM
+      // line — its state lives in the registry TerminalView populates, keyed by
+      // the session id it stamped onto its own host element.
+      const termview = target?.closest<HTMLElement>('.termview')
+      const takeover = termview?.dataset.sessionId
+        ? getTakeoverLinkState(termview.dataset.sessionId)
+        : undefined
+      setClickTarget({
+        lineText: line?.dataset.lineText,
+        linkUrl: link?.dataset.url ?? takeover?.hoveredUrl ?? undefined,
+        selection: takeover?.getSelection() || undefined,
+      })
       setAt({ x: event.clientX, y: event.clientY })
     }
 
@@ -166,8 +200,43 @@ export function ContextMenu() {
   // it rather than mint a duplicate.
   const match = session ? matchingProfile(profiles, session, profile, home) : undefined
 
+  const copyToClipboard = (text: string) => {
+    void navigator.clipboard.writeText(text).catch(() => {
+      // Clipboard can be unavailable; failing silently matches Block.tsx's copy.
+    })
+  }
+
+  const hasCopyEntry = !!(clickTarget.linkUrl || clickTarget.lineText || clickTarget.selection)
+
   const entries: Entry[] = [
-    { label: 'New Session', kbd: '⌘T', run: () => void newSession() },
+    // Only present when the right-click actually landed on output — chrome
+    // (header, composer, empty pane) has neither a line, link, nor selection
+    // to copy. `linkUrl` here can come from either the block stream (an
+    // actual DOM span) or a hovered link inside a takeover terminal.
+    ...(clickTarget.linkUrl
+      ? [{ label: 'Copy Link', run: () => copyToClipboard(clickTarget.linkUrl!) }]
+      : []),
+    ...(clickTarget.lineText
+      ? [
+          {
+            label: 'Copy Text',
+            group: !clickTarget.linkUrl,
+            run: () => copyToClipboard(clickTarget.lineText!),
+          },
+        ]
+      : []),
+    // The takeover-terminal equivalent of Copy Text: there is no line model in
+    // a raw xterm.js grid, only whatever the user has selected in it.
+    ...(clickTarget.selection
+      ? [
+          {
+            label: 'Copy Selection',
+            group: !clickTarget.linkUrl,
+            run: () => copyToClipboard(clickTarget.selection!),
+          },
+        ]
+      : []),
+    { label: 'New Session', kbd: '⌘T', group: hasCopyEntry, run: () => void newSession() },
     {
       label: 'Clone Session',
       // Same profile and same cwd as the session it was cloned from, which is
