@@ -153,8 +153,12 @@ An agent's own shell may hold this permission when the user's terminal does not 
 "it works when I run it" is evidence of a permission difference, not of a working
 script. Grant it under System Settings → Privacy & Security → Automation.
 
-Builds are **arm64 only**; `aarch64-apple-darwin` is the sole installed Rust
-target, so Intel Macs cannot run TRMNL at all.
+Builds are **arm64 only**. Apple Silicon is the supported target by decision, not
+by omission — do not offer a universal build or `x86_64-apple-darwin` as a fix.
+
+There is no auto-update, and adding one is not a small change: see
+[docs/updater-spec.md](docs/updater-spec.md) for what it involves and the
+decisions that come first.
 
 ## Installing locally
 

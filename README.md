@@ -390,6 +390,13 @@ Profile environment variables are stored in plaintext. The Profiles pane warns
 when a key looks like a credential, but **Keychain routing is not implemented**.
 The handoff flags this for security review before shipping; treat it as open.
 
+## Updating
+
+There is no auto-update. New versions are published to
+[Releases](https://github.com/MatthewRCrigger/TRMNL/releases) and installed by
+hand. What an updater would involve is specced in
+[docs/updater-spec.md](docs/updater-spec.md); it is not built.
+
 ## Contributing
 
 Bug reports and feature ideas are welcome as
