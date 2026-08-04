@@ -86,6 +86,26 @@ export function Settings() {
 
 /* --- Profiles -------------------------------------------------------------- */
 
+/** The name a profile is born with, and the signal that it is still untouched. */
+export const DEFAULT_PROFILE_NAME = 'new profile'
+
+/**
+ * The trailing folder of an absolute path.
+ *
+ * Returns empty for the filesystem root, which has no folder name — better to
+ * leave the profile called `new profile` than to rename it to nothing.
+ *
+ * Deliberately not shared with the identically-shaped helper in windowTitle.ts:
+ * that one exists to shorten a path for display and is free to change how it
+ * abbreviates, while this one names a profile. Coupling them would mean a
+ * display tweak silently renaming profiles.
+ */
+export function folderName(path: string): string {
+  const trimmed = path.replace(/\/+$/, '')
+  const slash = trimmed.lastIndexOf('/')
+  return slash === -1 ? trimmed : trimmed.slice(slash + 1)
+}
+
 /**
  * Pick a working directory with the system folder panel.
  *
@@ -99,10 +119,18 @@ export function Settings() {
  * the rest of the app stores and displays: a profile that reads `~/src/thing`
  * before browsing should not become `/Users/you/src/thing` afterwards.
  *
+ * A profile still called `new profile` is renamed to the chosen folder, since
+ * that name means the form was never filled in rather than that the user wanted
+ * it. Any other name is left alone — including one that matches a previously
+ * browsed folder, because by then it is a name the user has seen and kept.
+ *
  * Cancelling returns null and changes nothing, which is the whole contract —
  * there is no error case worth surfacing beyond that.
  */
-async function browseForCwd(current: string, apply: (cwd: string) => void): Promise<void> {
+async function browseForCwd(
+  profile: Profile,
+  apply: (patch: Partial<Profile>) => void,
+): Promise<void> {
   const home = useStore.getState().host?.home ?? ''
   const expand = (p: string) =>
     home && p.startsWith('~') ? `${home}${p.slice(1)}` : p
@@ -111,12 +139,18 @@ async function browseForCwd(current: string, apply: (cwd: string) => void): Prom
     const picked = await open({
       directory: true,
       multiple: false,
-      defaultPath: expand(current) || home || undefined,
+      defaultPath: expand(profile.cwd) || home || undefined,
       title: 'Choose a working directory',
     })
     if (typeof picked !== 'string') return
 
-    apply(home && picked.startsWith(home) ? `~${picked.slice(home.length)}` : picked)
+    const cwd = home && picked.startsWith(home) ? `~${picked.slice(home.length)}` : picked
+    const patch: Partial<Profile> = { cwd }
+
+    const folder = folderName(picked)
+    if (profile.name === DEFAULT_PROFILE_NAME && folder) patch.name = folder
+
+    apply(patch)
   } catch (err) {
     // A denied capability or a panel that cannot open is worth a line, but not
     // worth interrupting the settings pane over.
@@ -145,7 +179,7 @@ function ProfilesPane() {
   const addProfile = () => {
     const profile: Profile = {
       id: `p-${Date.now().toString(36)}`,
-      name: 'new profile',
+      name: DEFAULT_PROFILE_NAME,
       cwd: host?.home ?? '~',
       shell: host?.shell ?? '/bin/zsh',
       connectVia: 'local',
@@ -218,7 +252,7 @@ function ProfilesPane() {
               <button
                 className="btn"
                 type="button"
-                onClick={() => void browseForCwd(selected.cwd, (cwd) => patch({ cwd }))}
+                onClick={() => void browseForCwd(selected, patch)}
               >
                 BROWSE…
               </button>
