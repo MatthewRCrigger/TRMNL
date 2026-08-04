@@ -79,6 +79,60 @@
   min-height: 0;
 }
 
+/* Telemetry, full width along the bottom — was a vertical rail footer; moving
+ * it here after the rail's removal is what gave it back the horizontal room
+ * to lay every stat out in one row instead of stacking them. */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+  height: 22px;
+  padding: 0 12px;
+  background: var(--rail);
+  border-top: 1px solid var(--bd2);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--fgdd);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.statusbar__stat {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.statusbar__label { letter-spacing: 0.1em; }
+.statusbar__value { color: var(--act); }
+
+/* Fixed-width value cells so a rate ticking from `8K` to `1.2M`, or CPU from
+ * `9%` to `100%`, cannot nudge anything to its right — this row updates twice
+ * a second and the clock at the end is the last thing that should ever move. */
+.statusbar__net {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.statusbar__netarrow { color: var(--fgdd); }
+
+.statusbar__netval {
+  width: 38px;
+  text-align: right;
+  color: var(--fgd);
+}
+
+.statusbar__clock {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .frame__sink {
   position: absolute;
   inset: 0;
@@ -221,321 +275,106 @@
   flex: none;
 }
 
-/* --- Session rail --------------------------------------------------------- */
+/* --- Pane tabs -------------------------------------------------------------
+ *
+ * One strip per pane, replacing the old vertical session rail: a session is a
+ * tab in whichever pane owns it, rather than a row in a sidebar shared by both.
+ */
 
-.rail {
+.panetabs {
   display: flex;
-  flex-direction: column;
-  width: 208px;
+  align-items: stretch;
   flex: none;
+  height: 30px;
   background: var(--rail);
-  border-right: 1px solid var(--bd2);
-  transition: width 0.2s;
+  border-bottom: 1px solid var(--bd2);
+  overflow-x: auto;
 }
 
-.rail--collapsed { width: 54px; }
-
-.rail__list {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.rail__group {
-  padding: 10px 14px 5px;
-  letter-spacing: 0.2em;
-}
-
-.rail__row {
+.panetab {
   display: flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 7px 14px;
-  border-left: 2px solid transparent;
+  gap: 7px;
+  flex: none;
+  max-width: 160px;
+  padding: 0 8px;
+  border-right: 1px solid var(--bd2);
+  border-bottom: 2px solid transparent;
   color: var(--fgd);
+  cursor: pointer;
   transition: background 0.16s, color 0.16s;
 }
 
-.rail__row[data-active='true'] {
-  border-left-color: var(--ac);
+.panetab[data-active='true'] {
+  border-bottom-color: var(--ac);
   background: var(--wash);
+  color: var(--fg);
 }
 
-.rail__row:hover { background: var(--wash2); }
+.panetab:hover { background: var(--wash2); }
 
-.rail__name {
-  flex: 1;
+/* Dragged tab stays put but fades, so its origin slot reads as "in flight"
+ * rather than just disappearing; the target slot gets the accent edge so the
+ * drop position is never ambiguous mid-drag. */
+.panetab[data-dragging='true'] { opacity: 0.4; }
+
+.panetab[data-drag-over='true'] { border-left: 2px solid var(--ac); }
+
+.panetab__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: left;
   font-family: var(--mono);
   font-weight: 500;
   font-size: 11.5px;
   color: inherit;
 }
 
-.rail__row[data-active='true'] .rail__name { color: var(--fg); }
+.panetab__name-edit {
+  border: 1px solid var(--ac);
+  background: var(--wash2);
+  padding: 0 3px;
+  margin: -1px 0;
+  border-radius: 2px;
+  max-width: 90px;
+}
 
-.rail__row { cursor: default; }
+.panetab__name-edit:focus { outline: none; }
 
-/* Badge and close button occupy the same cell, so revealing the close control on
- * hover cannot shift the row. */
-.rail__trail {
-  position: relative;
+.panetab__close {
+  display: grid;
   flex: none;
-  display: grid;
-  min-width: 22px;
-  justify-items: end;
-}
-
-.rail__badge {
-  grid-area: 1 / 1;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  color: var(--fgdd);
-  transition: opacity 0.16s;
-}
-
-/* Hidden until the row is hovered, then already lit — the reveal is the
- * discoverability signal here, so the button does not also need to be dull. A
- * permanently visible close on every row would put a red x down the whole rail. */
-.rail__close {
-  grid-area: 1 / 1;
-  display: grid;
   place-items: center;
-  width: 15px;
-  height: 15px;
-  font-size: 9px;
-  opacity: 0;
-  transition: opacity 0.16s, color 0.16s, border-color 0.16s, background-color 0.16s;
-}
-
-.rail__row:hover .rail__badge { opacity: 0; }
-.rail__row:hover .rail__close { opacity: 1; }
-
-.rail__count { color: var(--act); }
-
-/* The "add" affordances. Lit and filling like every other button, but the border
- * stays dashed in both states — the dash is what says this creates something
- * rather than acting on something, and a solid fill would spend that signal. */
-.rail__new,
-.dashed {
-  display: block;
-  width: calc(100% - 24px);
-  margin: 12px;
-  padding: 7px;
-  border: 1px dashed var(--ac);
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: var(--t-label);
-  letter-spacing: 0.16em;
-  color: var(--act);
-  background: transparent;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  border-color: transparent;
+  color: transparent;
   transition: color 0.16s, border-color 0.16s, background-color 0.16s;
 }
 
-/* The dash has to change colour along with the glyph — left at --ac it vanishes
- * into the fill it sits on, and the button loses the one mark that distinguishes
- * it from a solid action. */
-.rail__new:hover,
-.dashed:hover {
-  color: var(--on-ac);
-  background: var(--ac);
-  border-color: var(--on-ac);
+/* Always present and hit-testable — never gated behind opacity: 0 or a parent
+ * :hover, either of which let the button's own hover state lose a race against
+ * the tab's on a cursor move and made it miss clicks. */
+.panetab:hover .panetab__close {
+  border-color: var(--err);
+  color: var(--err);
 }
 
-.dashed--inline {
-  width: auto;
-  margin: 8px 0 0;
-  padding: 6px 12px;
-}
-
-/* Collapsed rail */
-
-.rail__tiles {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  flex: 1;
-  padding: 10px 0;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.rail__tile {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
+.panetabs__new {
   flex: none;
-  border: 1px solid transparent;
+  width: 30px;
+  border-right: 1px solid var(--bd2);
   font-family: var(--mono);
-  font-weight: 500;
-  font-size: var(--t-label);
-  letter-spacing: 0.04em;
+  font-size: 14px;
   color: var(--fgdd);
-  transition: background 0.16s, border-color 0.16s, color 0.16s;
+  transition: color 0.16s, background-color 0.16s;
 }
 
-.rail__tile[data-active='true'] {
-  background: var(--wash);
-  border-color: var(--bd);
+.panetabs__new:hover {
   color: var(--act);
+  background: var(--wash2);
 }
-
-.rail__tile:hover { color: var(--act); }
-
-.rail__tiledot {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 4px;
-  height: 4px;
-}
-
-.rail__tile--new { border: 1px dashed var(--bd2); font-size: 13px; }
-
-.rail__footc {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 9px 4px;
-  border-top: 1px solid var(--bd2);
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  /* Same reasoning as the expanded footer: tabular figures keep the collapsed
-     readout from twitching as values change width. */
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-}
-
-.rail__footcpu { color: var(--act); }
-.rail__footmem { color: var(--fgdd); }
-
-/* Telemetry footer */
-
-.rail__foot {
-  flex: none;
-  padding: 11px 14px;
-  border-top: 1px solid var(--bd2);
-}
-
-.spark {
-  display: flex;
-  align-items: flex-end;
-  gap: 1.5px;
-  height: 22px;
-  margin-bottom: 8px;
-}
-
-.spark__bar { flex: 1; min-height: 1px; }
-
-/* Telemetry grid.
- *
- * Numbers here update twice a second, so the layout is built to not move: fixed
- * column widths, right-aligned values, and tabular numerals so every digit is
- * the same width. `9%` and `27%` occupy identical space. */
-.rail__stats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 7px;
-}
-
-/* Two rows per metric: label + value on top, bar beneath. The rail is only
- * 208px wide, and a single row could not hold a label, a usable bar and a value
- * like `305.9/460.4G` without one of them collapsing. */
-.rail__stat {
-  display: grid;
-  grid-template-columns: 34px 1fr;
-  grid-template-areas:
-    'label value'
-    'bar   bar';
-  align-items: center;
-  gap: 2px 6px;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-}
-
-.rail__slabel {
-  grid-area: label;
-  color: var(--fgdd);
-  letter-spacing: 0.1em;
-}
-
-.rail__sbar {
-  grid-area: bar;
-  position: relative;
-  height: 2px;
-  background: var(--wash);
-  overflow: hidden;
-}
-
-.rail__sfill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  transition: width 0.3s linear, background 0.2s;
-}
-
-.rail__sval {
-  grid-area: value;
-  text-align: right;
-  color: var(--act);
-  white-space: nowrap;
-}
-
-/* Network row: arrows and clock are fixed, values right-aligned in fixed cells. */
-.rail__net {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px;
-  margin-top: 2px;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-  color: var(--fgdd);
-}
-
-/* Fixed width so a rate going from `8K` to `1.2M` cannot shift the clock. */
-.rail__netpair {
-  display: flex;
-  align-items: baseline;
-  gap: 2px;
-  flex: none;
-}
-
-.rail__netarrow { color: var(--fgdd); flex: none; }
-
-.rail__netval {
-  width: 38px;
-  text-align: right;
-  color: var(--fgd);
-}
-
-.rail__clock { color: var(--fgdd); white-space: nowrap; }
-
-.rail__toggle {
-  flex: none;
-  padding: 8px;
-  border-top: 1px solid var(--bd2);
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: var(--t-label);
-  letter-spacing: 0.14em;
-  color: var(--fgdd);
-  transition: color 0.16s;
-}
-
-.rail__toggle:hover { color: var(--act); }
 
 /* --- Panes ---------------------------------------------------------------- */
 
@@ -991,6 +830,21 @@
   -webkit-user-select: text;
 }
 
+/* A bare URL detected in output — see term/linkify.ts. Always shown as a link
+ * (underline + accent) rather than only on ⌘-hover: CSS has no way to read a
+ * modifier key, and an affordance that only appears once you already know to
+ * hold ⌘ is not much of an affordance. Plain click still selects text like any
+ * other span here; only ⌘-click opens it (see LineContent in Block.tsx). */
+.block__link {
+  color: var(--act);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--act) 40%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.block__link:hover { text-decoration-color: var(--act); }
+
 /* Part of the container: its own divided band under the output rather than a
  * button floating loose beneath it. */
 .block__fold {
@@ -1184,6 +1038,36 @@
 }
 
 .sx-serve__key { color: var(--fgd); }
+
+.sx-test__summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.sx-test__stat { font-size: var(--t-label); }
+.sx-test__duration { color: var(--fgdd); margin-left: auto; }
+
+.sx-test__failures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.sx-test__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  background: var(--wash2);
+  border: 1px solid var(--bd2);
+  color: var(--fg);
+}
+
+.sx-test__suite { color: var(--fgdd); }
 
 .sx-err {
   padding: 13px 16px;
@@ -1800,6 +1684,51 @@
 
 .toggle[data-on='true'] .toggle__knob { background: var(--ac); }
 
+/* --- Close confirmation ----------------------------------------------------- */
+
+.closeconfirm {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 420px;
+  max-width: calc(100% - 40px);
+  padding: 18px 20px;
+  background: color-mix(in oklch, var(--card) 96%, transparent);
+  border: 1px solid var(--bd);
+  box-shadow: 0 24px 60px -12px #000;
+  backdrop-filter: blur(10px);
+}
+
+.closeconfirm__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.closeconfirm__head .micro { color: var(--warn); }
+
+.closeconfirm__body {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fgd);
+}
+
+.closeconfirm__body code {
+  font-family: var(--mono);
+  color: var(--act);
+}
+
+.closeconfirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* --- Settings window ------------------------------------------------------ */
 
 .settings {
@@ -2352,16 +2281,39 @@
   color: var(--act);
 }
 
+/* Listening for the next keydown: the chord slot itself is the capture cue. */
+.keys__chord[data-listening='true'] {
+  border-color: var(--ac);
+  color: var(--ac);
+  animation: pul 1.4s ease-in-out infinite;
+}
+
 .keys__action { flex: 1; font-family: var(--mono); font-size: 11.5px; color: var(--fgd); }
 
 .keys__edit {
+  padding: 3px 9px;
   font-family: var(--mono);
   font-weight: 500;
   font-size: var(--t-label);
   letter-spacing: 0.12em;
+}
+
+/* The permanently fixed rows (native menu chords, ⇥) — same dim treatment the
+ * whole control used to have before any of this was wired up. */
+.keys__edit.is-disabled {
   color: var(--fgdd);
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.keys__collision {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 16px;
+  padding: 10px 13px;
+  background: color-mix(in oklch, var(--warn) 8%, transparent);
+  border: 1px solid color-mix(in oklch, var(--warn) 32%, transparent);
 }
 
 .keys__note { margin-top: 20px; letter-spacing: 0.12em; }
@@ -2555,21 +2507,21 @@
 /* A remote session is a tunnel to another machine. The handoff leaves the
  * disconnect state undesigned, so this establishes only the "this is elsewhere"
  * vocabulary and deliberately does not invent a failure treatment. */
-.rail__link {
+.panetab__link {
   flex: none;
   font-size: 10px;
   color: var(--warn);
   opacity: 0.75;
 }
 
-/* The left edge carries the caution hue, so a remote row is distinguishable from
- * a local one even before reading it. */
-.rail__row[data-remote='true'] {
-  border-left-color: color-mix(in oklch, var(--warn) 30%, transparent);
+/* The underline carries the caution hue, so a remote tab is distinguishable
+ * from a local one even before reading it. */
+.panetab[data-remote='true'] {
+  border-bottom-color: color-mix(in oklch, var(--warn) 30%, transparent);
 }
 
-.rail__row[data-remote='true'][data-active='true'] {
-  border-left-color: var(--warn);
+.panetab[data-remote='true'][data-active='true'] {
+  border-bottom-color: var(--warn);
   background: color-mix(in oklch, var(--warn) 7%, transparent);
 }
 

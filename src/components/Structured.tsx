@@ -24,6 +24,8 @@ export function Structured({ data, onRun }: Props) {
       return <ErrorPanel data={data} onRun={onRun} />
     case 'list':
       return <ListTable data={data} onRun={onRun} />
+    case 'test':
+      return <TestSummary data={data} />
   }
 }
 
@@ -215,6 +217,42 @@ function ServeCard({ data }: { data: Extract<StructuredData, { kind: 'serve' }> 
           {data.hints.map((hint) => (
             <span key={hint.key}>
               <span className="sx-serve__key">{hint.key}</span> {hint.label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TestSummary({ data }: { data: Extract<StructuredData, { kind: 'test' }> }) {
+  return (
+    <div className="sx">
+      <div className="sx-test__summary">
+        {data.passed > 0 && (
+          <span className="sx-test__stat" style={{ color: 'var(--act)' }}>
+            {data.passed} PASSED
+          </span>
+        )}
+        {data.failed > 0 && (
+          <span className="sx-test__stat" style={{ color: 'var(--err)' }}>
+            {data.failed} FAILED
+          </span>
+        )}
+        {data.skipped > 0 && (
+          <span className="sx-test__stat" style={{ color: 'var(--fgdd)' }}>
+            {data.skipped} SKIPPED
+          </span>
+        )}
+        {data.duration && <span className="sx-test__duration micro">{data.duration}</span>}
+      </div>
+      {data.failures.length > 0 && (
+        <div className="sx-test__failures">
+          {data.failures.map((failure, i) => (
+            <span className="sx-test__chip" key={`${failure.name}-${i}`}>
+              <span className="sx-err__x" style={{ color: 'var(--err)' }}>✕</span>
+              {failure.suite && <span className="sx-test__suite">{failure.suite} ›</span>}
+              {failure.name}
             </span>
           ))}
         </div>

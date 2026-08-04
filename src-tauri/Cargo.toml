@@ -1,6 +1,6 @@
 [package]
 name = "trmnl"
-version = "0.4.2"
+version = "0.5.5"
 description = "TRMNL — a TRON-inspired terminal for macOS"
 authors = ["Matthew Crigger"]
 edition = "2021"

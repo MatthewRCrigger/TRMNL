@@ -17,6 +17,12 @@ import {
   isValidColor,
   type CommandAccent,
 } from '../lib/commandAccent'
+import {
+  resolveKeybindings,
+  sanitizeKeybindingOverrides,
+  type ActionId,
+  type KeybindingOverrides,
+} from '../lib/keybindings'
 import { notifyComplete, shouldNotify } from '../lib/notify'
 import {
   createSessionIds,
@@ -119,6 +125,15 @@ export interface Session {
    * pane say so instead.
    */
   failed?: string
+  /**
+   * Set once the shell process itself has ended — as opposed to a command
+   * finishing inside it. `code` is null when the OS could not report one.
+   *
+   * The pane stays open and its scrollback stays exactly as it was: closing it
+   * is now something the user does on purpose, not something that happens to
+   * them the moment a shell exits. See `pane__exited` in Pane.tsx.
+   */
+  exited?: { code: number | null }
 }
 
 export interface Settings {
@@ -133,6 +148,9 @@ export interface Settings {
   scrollbackCap: number
   /** Per-command accent overrides; see lib/commandAccent.ts. */
   commandAccents: CommandAccent[]
+  /** User overrides of the JS-handled chords in lib/keybindings.ts. A missing
+   *  action falls back to its shipped default — see resolveKeybindings. */
+  keybindings: KeybindingOverrides
 }
 
 export interface HostInfo {
@@ -160,14 +178,24 @@ interface StoreState {
   splitDir: SplitDir
   paneSize: number
   focus: PaneId
-  railOpen: boolean
-  railAutoCollapsed: boolean
+  /**
+   * The focused pane temporarily fills the window, per-window and never
+   * persisted — same category as scroll position, not layout. Meaningless
+   * while solo; `toggleMaximizePane` is a no-op unless `split` is true.
+   */
+  paneMaximized: boolean
 
   /* overlays */
   palette: { open: boolean; query: string; activeIndex: number }
   appearance: { open: boolean }
   settings: { open: boolean; tab: SettingsTab; selectedProfile: string | null }
   search: { open: boolean; query: string; activeIndex: number }
+  /**
+   * A close was requested for a session/pane that still has a live process,
+   * pending the user's confirmation. Closing is only ever destructive in this
+   * case — an already-exited shell closes immediately, no prompt.
+   */
+  closeConfirm: { kind: 'session'; id: string } | { kind: 'pane' } | null
 
   /* content */
   panes: Record<PaneId, PaneState>
@@ -180,10 +208,9 @@ interface StoreState {
   init: () => Promise<void>
   setFocus: (pane: PaneId) => void
   toggleSplit: (dir: SplitDir) => void
+  toggleMaximizePane: () => void
   closePane: () => void
   setPaneSize: (pct: number) => void
-  setRailOpen: (open: boolean) => void
-  syncRailForWidth: (width: number) => void
 
   openPalette: () => void
   closePalette: () => void
@@ -207,6 +234,17 @@ interface StoreState {
   updateSettings: (
     patch: Partial<Omit<Settings, 'renderers'>> & { renderers?: Partial<Record<RendererId, boolean>> },
   ) => void
+  /**
+   * Rebind one action's chord. Collision checking happens in the UI before
+   * this is called — this just commits it.
+   *
+   * When `swapWith` is given (the user confirmed taking a chord that was
+   * already in use), that other action is reassigned the chord `action` is
+   * giving up, rather than being left with no chord at all — every action
+   * always resolves to exactly one, and the global handler has no notion of
+   * "unbound".
+   */
+  setKeybinding: (action: ActionId, chord: string, swapWith?: ActionId) => void
   /** Accent forced by a running command, or null when none is active. */
   commandAccent: string | null
   /** Nonce+colour for the identity sweep; null when no sweep is in flight. */
@@ -226,9 +264,23 @@ interface StoreState {
   ) => Promise<void>
   /** Re-attach to a shell that outlived the page that spawned it. */
   adoptSession: (id: string) => Promise<void>
-  /** Kill a session's shell and drop it from its pane. */
+  /**
+   * Close a session: kills its shell and drops it from its pane.
+   *
+   * Guarded by `closeConfirm` when the shell is still running a command — see
+   * `confirmClose`/`cancelClose`. A session whose process has already exited
+   * (or never started) closes immediately, since nothing live is being killed.
+   */
   closeSession: (id: string) => Promise<void>
+  /** User confirmed closing whatever `closeConfirm` was pending; performs it. */
+  confirmClose: () => Promise<void>
+  /** User backed out of a pending close; the session/pane is left untouched. */
+  cancelClose: () => void
   activateSession: (pane: PaneId, index: number) => void
+  /** User override of a session's name, independent of its profile from then on. */
+  renameSession: (id: string, name: string) => void
+  /** Move a tab within its own pane's strip. Cross-pane moves are not supported. */
+  reorderSession: (pane: PaneId, fromIndex: number, toIndex: number) => void
   setSessionInput: (id: string, input: string) => void
   /** Record the grid a pane just reported, so the window title can name it. */
   setSessionSize: (id: string, cols: number, rows: number) => void
@@ -252,12 +304,13 @@ export const DEFAULT_SETTINGS: Settings = {
   identityName: DEFAULT_IDENTITY.name,
   density: 'normal',
   foldThreshold: 9,
-  renderers: { build: true, git: true, serve: true, err: true, list: true },
+  renderers: { build: true, git: true, serve: true, err: true, list: true, test: true },
   ghostSource: 'scripts',
   restoreOnLaunch: true,
   bootSequence: true,
   scrollbackCap: 10_000,
   commandAccents: DEFAULT_COMMAND_ACCENTS,
+  keybindings: {},
 }
 
 /** Live PTY sessions, keyed by session id. Outside the store — not serialisable. */
@@ -367,6 +420,13 @@ function sessionCallbacks(set: StoreSet, id: string): SessionCallbacks {
         return { sessions: { ...s.sessions, [id]: { ...existing, takeover: active } } }
       })
     },
+    onExit: (code) => {
+      set((s) => {
+        const existing = s.sessions[id]
+        if (!existing) return s
+        return { sessions: { ...s.sessions, [id]: { ...existing, exited: { code } } } }
+      })
+    },
   }
 }
 
@@ -443,18 +503,121 @@ function stopToolPoll(id: string): void {
   }
 }
 
+/**
+ * The actual mechanics of closing pane B — killing its sessions' shells and
+ * clearing them from the store. Split out from `closePane` so the public
+ * action can gate this behind a confirmation when a live process would be
+ * killed, while `confirmClose` and internal callers (`closeSession` falling
+ * back to an empty pane B) can still reach the real thing directly.
+ */
+function performClosePane(get: () => StoreState, set: StoreSet): void {
+  const { panes } = get()
+  for (const id of panes.b.sessions) {
+    void ptys.get(id)?.dispose()
+    ptys.delete(id)
+    stopToolPoll(id)
+  }
+  set((s) => {
+    const sessions = { ...s.sessions }
+    for (const id of s.panes.b.sessions) delete sessions[id]
+    return {
+      split: false,
+      focus: 'a',
+      // A maximized view of a pane that no longer exists next to anything is
+      // meaningless — closing the split always returns to a normal, full-window
+      // solo pane.
+      paneMaximized: false,
+      sessions,
+      panes: { ...s.panes, b: { sessions: [], active: 0 } },
+    }
+  })
+}
+
+/**
+ * The actual mechanics of closing one session — killing its shell and
+ * dropping it from whichever pane holds it. Split out from `closeSession` for
+ * the same reason as `performClosePane`: the public action gates this behind
+ * a confirmation when the shell is mid-command, while `confirmClose` needs to
+ * reach the real thing once the user has said yes.
+ */
+async function performCloseSession(
+  get: () => StoreState,
+  set: StoreSet,
+  id: string,
+): Promise<void> {
+  // Kill the shell first so the PTY and its reader thread are released even if
+  // the store update below throws.
+  await ptys.get(id)?.dispose()
+  ptys.delete(id)
+  stopToolPoll(id)
+
+  set((s) => {
+    const panes = { ...s.panes }
+    for (const paneId of ['a', 'b'] as PaneId[]) {
+      const pane = panes[paneId]
+      const index = pane.sessions.indexOf(id)
+      if (index === -1) continue
+
+      const sessions = pane.sessions.filter((sid) => sid !== id)
+      // Keep the selection on a real session: step back when the last one goes,
+      // otherwise hold position so closing shifts the next one into place.
+      const active = Math.max(0, Math.min(pane.active, sessions.length - 1))
+      panes[paneId] = { sessions, active }
+    }
+
+    const sessions = { ...s.sessions }
+    delete sessions[id]
+    // Whatever the pane fell back to may belong to a different profile, so the
+    // window's colour is resolved against the new selection rather than left
+    // showing the closed session's.
+    return { panes, sessions, commandAccent: syncCommandAccent({ ...s, panes, sessions }) }
+  })
+
+  // A pane with no sessions left has nothing to render; give it a fresh one so
+  // the user is never staring at an empty pane with no way forward.
+  const state = get()
+  for (const paneId of ['a', 'b'] as PaneId[]) {
+    const pane = state.panes[paneId]
+    if (pane.sessions.length > 0) continue
+    // Pane B simply closes; pane A is the one that cannot be left empty. This
+    // always goes straight to `performClosePane` rather than the gated
+    // `closePane` — pane B has zero sessions at this point, so there is never
+    // anything live left to confirm, and routing through the public action
+    // here would risk a redundant prompt.
+    if (paneId === 'b' && state.split) {
+      performClosePane(get, set)
+    } else if (paneId === 'a') {
+      // Closing the last session closes the window, which is what every other
+      // macOS terminal does and the only way a secondary window can be shut
+      // with ⌘W at all — respawning here would make window 2 unclosable, since
+      // ⌘W would hand it a fresh session forever.
+      //
+      // The main window is the exception: it is the app's last one, and
+      // quitting on ⌘W would be a surprise from a chord that means "close
+      // this". It keeps the old behaviour of always holding a session.
+      if (isMainWindow()) {
+        await state.newSession()
+      } else {
+        await getCurrentWindow().close()
+        return
+      }
+    }
+  }
+  persist()
+}
+
 export const useStore = create<StoreState>((set, get) => ({
   split: false,
   splitDir: 'row',
   paneSize: 50,
   focus: 'a',
-  railOpen: true,
-  railAutoCollapsed: false,
+  paneMaximized: false,
 
   palette: { open: false, query: '', activeIndex: 0 },
   appearance: { open: false },
   settings: { open: false, tab: 'profiles', selectedProfile: null },
   search: { open: false, query: '', activeIndex: 0 },
+  closeConfirm: null,
   identitySweep: null,
   commandAccent: null,
 
@@ -559,7 +722,6 @@ export const useStore = create<StoreState>((set, get) => ({
         split: false,
         splitDir: workspace.splitDir,
         paneSize: workspace.paneSize,
-        railOpen: workspace.railOpen,
       })
 
       // Pane A only. Pane B is not visible in a solo window, so restoring its
@@ -617,43 +779,25 @@ export const useStore = create<StoreState>((set, get) => ({
     })
   },
 
+  toggleMaximizePane: () =>
+    set((s) => (s.split ? { paneMaximized: !s.paneMaximized } : s)),
+
   closePane() {
-    const { panes } = get()
-    for (const id of panes.b.sessions) {
-      void ptys.get(id)?.dispose()
-      ptys.delete(id)
-      stopToolPoll(id)
+    // Closing the split is only destructive when one of pane B's sessions is
+    // still running a live command — an idle or already-exited shell can just
+    // go. See `closeConfirm` and `confirmClose`.
+    const { panes, sessions } = get()
+    const hasLiveProcess = panes.b.sessions.some((id) => sessions[id]?.blocks.at(-1)?.running)
+    if (hasLiveProcess) {
+      set({ closeConfirm: { kind: 'pane' } })
+      return
     }
-    set((s) => {
-      const sessions = { ...s.sessions }
-      for (const id of s.panes.b.sessions) delete sessions[id]
-      return {
-        split: false,
-        focus: 'a',
-        sessions,
-        panes: { ...s.panes, b: { sessions: [], active: 0 } },
-      }
-    })
+    performClosePane(get, set)
   },
 
   setPaneSize: (pct) => {
     set({ paneSize: Math.min(78, Math.max(22, pct)) })
     persist()
-  },
-  setRailOpen: (open) => {
-    set({ railOpen: open, railAutoCollapsed: false })
-    persist()
-  },
-
-  syncRailForWidth(width) {
-    // Collapse automatically below ~1100px; a manual toggle overrides for the
-    // session, so only undo an auto-collapse.
-    const { railOpen, railAutoCollapsed } = get()
-    if (width < 1100 && railOpen) {
-      set({ railOpen: false, railAutoCollapsed: true })
-    } else if (width >= 1100 && !railOpen && railAutoCollapsed) {
-      set({ railOpen: true, railAutoCollapsed: false })
-    }
   },
 
   openPalette: () => set({ palette: { open: true, query: '', activeIndex: 0 } }),
@@ -744,6 +888,16 @@ export const useStore = create<StoreState>((set, get) => ({
       // behind the one in flight, so five fast switches land on the fifth colour.
       set({ identitySweep: { id: sweepNonce++, color: next.accent } })
     }
+  },
+
+  setKeybinding(action, chord, swapWith) {
+    set((s) => {
+      const resolved = resolveKeybindings(s.settingsValues.keybindings)
+      const overrides: KeybindingOverrides = { ...s.settingsValues.keybindings, [action]: chord }
+      if (swapWith) overrides[swapWith] = resolved[action]
+      return { settingsValues: { ...s.settingsValues, keybindings: overrides } }
+    })
+    persist()
   },
 
   /** Midpoint of the sweep: commit the accent that the band is carrying. */
@@ -960,67 +1114,65 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   async closeSession(id) {
-    // Kill the shell first so the PTY and its reader thread are released even if
-    // the store update below throws.
-    await ptys.get(id)?.dispose()
-    ptys.delete(id)
-    stopToolPoll(id)
-
-    set((s) => {
-      const panes = { ...s.panes }
-      for (const paneId of ['a', 'b'] as PaneId[]) {
-        const pane = panes[paneId]
-        const index = pane.sessions.indexOf(id)
-        if (index === -1) continue
-
-        const sessions = pane.sessions.filter((sid) => sid !== id)
-        // Keep the selection on a real session: step back when the last one goes,
-        // otherwise hold position so closing shifts the next one into place.
-        const active = Math.max(0, Math.min(pane.active, sessions.length - 1))
-        panes[paneId] = { sessions, active }
-      }
-
-      const sessions = { ...s.sessions }
-      delete sessions[id]
-      // Whatever the pane fell back to may belong to a different profile, so the
-      // window's colour is resolved against the new selection rather than left
-      // showing the closed session's.
-      return { panes, sessions, commandAccent: syncCommandAccent({ ...s, panes, sessions }) }
-    })
-
-    // A pane with no sessions left has nothing to render; give it a fresh one so
-    // the user is never staring at an empty pane with no way forward.
-    const state = get()
-    for (const paneId of ['a', 'b'] as PaneId[]) {
-      const pane = state.panes[paneId]
-      if (pane.sessions.length > 0) continue
-      // Pane B simply closes; pane A is the one that cannot be left empty.
-      if (paneId === 'b' && state.split) {
-        state.closePane()
-      } else if (paneId === 'a') {
-        // Closing the last session closes the window, which is what every other
-        // macOS terminal does and the only way a secondary window can be shut
-        // with ⌘W at all — respawning here would make window 2 unclosable, since
-        // ⌘W would hand it a fresh session forever.
-        //
-        // The main window is the exception: it is the app's last one, and
-        // quitting on ⌘W would be a surprise from a chord that means "close
-        // this". It keeps the old behaviour of always holding a session.
-        if (isMainWindow()) {
-          await state.newSession()
-        } else {
-          await getCurrentWindow().close()
-          return
-        }
-      }
+    // Killing a shell that is still running a command is the one genuinely
+    // destructive close — everything else (idle shell, already-exited shell)
+    // can go immediately. See `closeConfirm` and `confirmClose`.
+    const session = get().sessions[id]
+    if (session?.blocks.at(-1)?.running) {
+      set({ closeConfirm: { kind: 'session', id } })
+      return
     }
-    persist()
+    await performCloseSession(get, set, id)
+  },
+
+  async confirmClose() {
+    const pending = get().closeConfirm
+    if (!pending) return
+    set({ closeConfirm: null })
+    if (pending.kind === 'pane') {
+      performClosePane(get, set)
+    } else {
+      await performCloseSession(get, set, pending.id)
+    }
+  },
+
+  cancelClose() {
+    set({ closeConfirm: null })
   },
 
   activateSession: (pane, index) =>
     set((s) => {
       const panes = { ...s.panes, [pane]: { ...s.panes[pane], active: index } }
       return { panes, commandAccent: syncCommandAccent({ ...s, panes }) }
+    }),
+
+  renameSession: (id, name) =>
+    set((s) => {
+      const session = s.sessions[id]
+      const trimmed = name.trim()
+      if (!session || !trimmed) return s
+      return { sessions: { ...s.sessions, [id]: { ...session, name: trimmed } } }
+    }),
+
+  reorderSession: (pane, fromIndex, toIndex) =>
+    set((s) => {
+      const paneState = s.panes[pane]
+      if (fromIndex === toIndex) return s
+      if (fromIndex < 0 || fromIndex >= paneState.sessions.length) return s
+      if (toIndex < 0 || toIndex >= paneState.sessions.length) return s
+
+      const sessions = [...paneState.sessions]
+      const [moved] = sessions.splice(fromIndex, 1)
+      if (moved === undefined) return s
+      sessions.splice(toIndex, 0, moved)
+
+      // The active *session* stays selected across the reorder, even though its
+      // index just changed — otherwise dragging the active tab would switch
+      // which session the pane shows.
+      const activeId = paneState.sessions[paneState.active]
+      const active = activeId ? sessions.indexOf(activeId) : paneState.active
+
+      return { panes: { ...s.panes, [pane]: { sessions, active } } }
     }),
 
   setSessionInput(id, input) {
@@ -1259,6 +1411,7 @@ export function pickSettings(stored: Partial<Settings> | undefined): Settings {
       typeof stored.scrollbackCap === 'number' && stored.scrollbackCap > 0
         ? stored.scrollbackCap
         : DEFAULT_SETTINGS.scrollbackCap,
+    keybindings: sanitizeKeybindingOverrides(stored.keybindings),
   }
 }
 
@@ -1360,7 +1513,6 @@ export interface PersistedWorkspace {
   split: boolean
   splitDir: SplitDir
   paneSize: number
-  railOpen: boolean
   panes: Record<PaneId, { active: number; sessions: { profileId?: string; cwd: string; history: string[] }[] }>
 }
 
@@ -1525,7 +1677,6 @@ function persist(): void {
           split: state.split,
           splitDir: state.splitDir,
           paneSize: state.paneSize,
-          railOpen: state.railOpen,
           panes: {
             a: serialisePane(state, 'a'),
             b: serialisePane(state, 'b'),

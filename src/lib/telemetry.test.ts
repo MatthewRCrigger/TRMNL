@@ -1,10 +1,10 @@
-/** The rail footer updates twice a second, so its formatters must produce
- * constant-width output — otherwise every sample nudges the layout. These test
- * the formatting contract that the fixed-width CSS grid depends on. */
+/** The title bar's telemetry readout updates twice a second, so its formatters
+ * must produce constant-width output — otherwise every sample nudges the
+ * layout. These test the formatting contract that fixed-width CSS depends on. */
 
 import { describe, expect, it } from 'vitest'
 
-import { formatPct, formatLoad, formatRate, formatGb } from './Rail'
+import { formatPct, formatLoad, formatRate, formatGb } from './telemetry'
 
 describe('telemetry formatters', () => {
   it('keeps percentages within a predictable width', () => {

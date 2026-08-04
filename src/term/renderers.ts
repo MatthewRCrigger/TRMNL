@@ -17,9 +17,10 @@ import {
   type GitGroup,
   type ListEntry,
   type Structured,
+  type TestFailure,
 } from './types'
 
-export type RendererId = 'build' | 'git' | 'serve' | 'err' | 'list'
+export type RendererId = 'build' | 'git' | 'serve' | 'err' | 'list' | 'test'
 
 export interface Renderer {
   id: RendererId
@@ -35,6 +36,7 @@ let enabled: Record<RendererId, boolean> = {
   serve: true,
   err: true,
   list: true,
+  test: true,
 }
 
 export function setRendererEnabled(next: Partial<Record<RendererId, boolean>>): void {
@@ -424,6 +426,109 @@ function humanSize(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
 }
 
+/* --- test: vitest / jest / cargo test summary ------------------------------ */
+
+const testRenderer: Renderer = {
+  id: 'test',
+  matches: (cmd) =>
+    /\bvitest\b|\bjest\b|\bcargo\s+test\b|\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b/.test(cmd),
+  parse(output) {
+    return parseVitest(output) ?? parseJest(output) ?? parseCargoTest(output)
+  },
+}
+
+/**
+ * Vitest's own summary lines:
+ *   Test Files  1 failed (1)
+ *        Tests  1 failed | 12 passed (14)
+ *     Duration  268ms (...)
+ * Failed test names appear on lines like `× scratch > fails on purpose 3ms` —
+ * the `×`/`✕` marker distinguishes them from passed `✓` lines.
+ */
+function parseVitest(output: string): Structured | null {
+  const summary = /^\s*Tests\s+(.+)$/m.exec(output)?.[1]
+  if (!summary) return null
+
+  const passed = Number(/(\d+)\s+passed/.exec(summary)?.[1] ?? 0)
+  const failed = Number(/(\d+)\s+failed/.exec(summary)?.[1] ?? 0)
+  const skipped = Number(/(\d+)\s+skipped/.exec(summary)?.[1] ?? 0)
+  if (passed + failed + skipped === 0) return null
+
+  const duration = /^\s*Duration\s+(\S+)/m.exec(output)?.[1]
+
+  const failures: TestFailure[] = []
+  for (const raw of output.split('\n')) {
+    const m = /^\s*[×✕]\s+(.+?)\s+\d+m?s\s*$/.exec(raw) ?? /^\s*[×✕]\s+(.+)$/.exec(raw)
+    if (!m?.[1]) continue
+    const parts = m[1].split(' > ')
+    const name = parts.pop()
+    if (!name) continue
+    failures.push({ name, suite: parts.length > 0 ? parts.join(' > ') : undefined })
+  }
+
+  return { kind: 'test', passed, failed, skipped, duration, failures }
+}
+
+/**
+ * Jest's summary line:
+ *   Tests:       2 failed, 12 passed, 14 total
+ * Failed test names appear under a `●` marker: `  ● Suite name › test name`.
+ */
+function parseJest(output: string): Structured | null {
+  const summary = /^Tests:\s+(.+)$/m.exec(output)?.[1]
+  if (!summary) return null
+
+  const passed = Number(/(\d+)\s+passed/.exec(summary)?.[1] ?? 0)
+  const failed = Number(/(\d+)\s+failed/.exec(summary)?.[1] ?? 0)
+  const skipped = Number(/(\d+)\s+skipped/.exec(summary)?.[1] ?? 0)
+  if (passed + failed + skipped === 0) return null
+
+  const duration = /^Time:\s+(\S+)/m.exec(output)?.[1]
+
+  const failures: TestFailure[] = []
+  const seen = new Set<string>()
+  for (const raw of output.split('\n')) {
+    const m = /^\s*●\s+(.+)$/.exec(raw)
+    if (!m?.[1] || seen.has(m[1])) continue
+    seen.add(m[1])
+    const parts = m[1].split(' › ')
+    const name = parts.pop()
+    if (!name) continue
+    failures.push({ name, suite: parts.length > 0 ? parts.join(' › ') : undefined })
+  }
+
+  return { kind: 'test', passed, failed, skipped, duration, failures }
+}
+
+/**
+ * cargo test's summary line:
+ *   test result: FAILED. 12 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+ * Failed test names appear above it: `test tests::foo::bar_case ... FAILED`.
+ */
+function parseCargoTest(output: string): Structured | null {
+  const summary = /^test result: \w+\.\s+(.+)$/m.exec(output)?.[1]
+  if (!summary) return null
+
+  const passed = Number(/(\d+)\s+passed/.exec(summary)?.[1] ?? 0)
+  const failed = Number(/(\d+)\s+failed/.exec(summary)?.[1] ?? 0)
+  const skipped = Number(/(\d+)\s+ignored/.exec(summary)?.[1] ?? 0)
+  if (passed + failed + skipped === 0) return null
+
+  const duration = /finished in\s+(\S+)/.exec(summary)?.[1]
+
+  const failures: TestFailure[] = []
+  for (const raw of output.split('\n')) {
+    const m = /^test\s+(\S+)\s+\.\.\.\s+FAILED\s*$/.exec(raw)
+    if (!m?.[1]) continue
+    const path = m[1].split('::')
+    const name = path.pop()
+    if (!name) continue
+    failures.push({ name, suite: path.length > 0 ? path.join('::') : undefined })
+  }
+
+  return { kind: 'test', passed, failed, skipped, duration, failures }
+}
+
 /* --- registry ------------------------------------------------------------- */
 
 export const renderers: Renderer[] = [
@@ -432,6 +537,7 @@ export const renderers: Renderer[] = [
   gitRenderer,
   serveRenderer,
   listRenderer,
+  testRenderer,
 ]
 
 /** Try each enabled renderer in order; first non-null wins. */

@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
@@ -51,7 +52,10 @@ pub struct SpawnOptions {
 struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
-    child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// Shared with the reader thread so it can `wait()` for the real exit
+    /// status once it sees EOF, without needing to reach back through the
+    /// session map (whose lifetime it cannot statically outlive).
+    child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     /// The shell's PID, kept so the process-tree scan has a root to walk from.
     /// See `proctree`: what a session is *really* running is only visible by
     /// descending from here, not by reading the command the user typed.
@@ -125,13 +129,15 @@ impl PtyManager {
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
+        let child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>> =
+            Arc::new(Mutex::new(child));
 
         self.sessions.lock().insert(
             id.clone(),
             Session {
                 master: pair.master,
                 writer,
-                child,
+                child: child.clone(),
                 pid,
                 window: window.to_string(),
             },
@@ -148,6 +154,7 @@ impl PtyManager {
         let app = app.clone();
         let read_id = id.clone();
         let read_window = window.to_string();
+        let child_for_wait = child;
         std::thread::Builder::new()
             .name(format!("pty-read-{read_id}"))
             .spawn(move || {
@@ -174,13 +181,22 @@ impl PtyManager {
                         Err(_) => break,
                     }
                 }
+                // EOF means the shell already exited; `wait()` here just reaps the
+                // zombie and reads the status the OS already recorded rather than
+                // blocking on a process that is (or is about to be) done. Holding
+                // the `Arc` directly (rather than looking the session back up by
+                // id) is what lets this run even after `kill()` has already
+                // removed the session from the map — `wait()` is safe to call more
+                // than once and only the first caller sees a real status.
+                let code = child_for_wait
+                    .lock()
+                    .wait()
+                    .ok()
+                    .map(|status| status.exit_code() as i32);
                 let _ = app.emit_to(
                     read_window.as_str(),
                     "pty://exit",
-                    PtyExit {
-                        id: read_id,
-                        code: None,
-                    },
+                    PtyExit { id: read_id, code },
                 );
             })?;
 
@@ -215,9 +231,10 @@ impl PtyManager {
 
     /// Kill the shell and forget the session.
     pub fn kill(&self, id: &str) -> Result<()> {
-        if let Some(mut session) = self.sessions.lock().remove(id) {
-            let _ = session.child.kill();
-            let _ = session.child.wait();
+        if let Some(session) = self.sessions.lock().remove(id) {
+            let mut child = session.child.lock();
+            let _ = child.kill();
+            let _ = child.wait();
         }
         Ok(())
     }
@@ -263,9 +280,10 @@ impl PtyManager {
         };
 
         let count = doomed.len();
-        for mut session in doomed {
-            let _ = session.child.kill();
-            let _ = session.child.wait();
+        for session in doomed {
+            let mut child = session.child.lock();
+            let _ = child.kill();
+            let _ = child.wait();
         }
         count
     }

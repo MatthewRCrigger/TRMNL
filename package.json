@@ -1,6 +1,6 @@
 {
   "name": "trmnl",
-  "version": "0.4.2",
+  "version": "0.5.5",
   "description": "A TRON-inspired terminal for macOS, with a block-based command model.",
   "license": "MIT",
   "author": "Matthew Crigger",
@@ -34,6 +34,7 @@
     "@tauri-apps/plugin-opener": "^2.5.4",
     "@tauri-apps/plugin-os": "^2.3.2",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
     "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "^6.0.0",
     "react": "^19.2.0",

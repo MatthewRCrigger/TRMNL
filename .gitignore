@@ -9,3 +9,6 @@ src-tauri/gen/schemas/
 # public, and the identity belongs to whoever is building, not to the project.
 .env.local
 design_handoff_grid_terminal/
+
+# Scoping docs for planned work, not part of the shipped product.
+plans/

@@ -4,14 +4,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { formatWindowTitle } from './lib/windowTitle'
+import { formatChord, resolveKeybindings } from './lib/keybindings'
 import { Appearance } from './components/Appearance'
 import { Boot } from './components/Boot'
+import { CloseConfirm } from './components/CloseConfirm'
 import { ContextMenu } from './components/ContextMenu'
 import { Pane } from './components/Pane'
 import { Palette } from './components/Palette'
-import { Rail } from './components/Rail'
 import { Search } from './components/Search'
 import { Settings } from './components/Settings'
+import { StatusBar } from './components/StatusBar'
 import { TitleBar } from './components/TitleBar'
 import { listenForMenuEvents } from './lib/menuEvents'
 import { listenForConfigSync, useStore } from './state/store'
@@ -29,9 +31,9 @@ export function App() {
   const splitDir = useStore((s) => s.splitDir)
   const paneSize = useStore((s) => s.paneSize)
   const setPaneSize = useStore((s) => s.setPaneSize)
+  const paneMaximized = useStore((s) => s.paneMaximized)
   const focus = useStore((s) => s.focus)
   const setFocus = useStore((s) => s.setFocus)
-  const syncRailForWidth = useStore((s) => s.syncRailForWidth)
 
   const sweep = useStore((s) => s.identitySweep)
   const bootSequence = useStore((s) => s.settingsValues.bootSequence)
@@ -54,14 +56,6 @@ export function App() {
       setInitSettled(true)
     })
   }, [init])
-
-  // Auto-collapse the rail on narrow windows.
-  useEffect(() => {
-    const onResize = () => syncRailForWidth(window.innerWidth)
-    onResize()
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [syncRailForWidth])
 
   useGlobalKeys()
   useWindowTitle()
@@ -120,46 +114,58 @@ export function App() {
       <TitleBar />
 
       <div className="frame__body">
-        <Rail />
-
         <div
           className="panes"
           data-dir={splitDir}
           ref={framRef}
           style={{ flexDirection: splitDir === 'row' ? 'row' : 'column' }}
         >
-          <div
-            className="panes__slot"
-            style={split ? { flex: `0 0 ${paneSize}%` } : { flex: '1 1 auto' }}
-          >
-            <Pane pane="a" showClose={false} />
-          </div>
+          {/* Maximized hides the unfocused pane's DOM entirely rather than
+              just collapsing its flex box — its session keeps running in the
+              background, but an off-screen xterm.js grid (for any takeover
+              program) is not worth keeping laid out. */}
+          {(!split || !paneMaximized || focus === 'a') && (
+            <div
+              className="panes__slot"
+              style={
+                !split
+                  ? { flex: '1 1 auto' }
+                  : paneMaximized
+                    ? { flex: '1 1 auto' }
+                    : { flex: `0 0 ${paneSize}%` }
+              }
+            >
+              <Pane pane="a" showClose={false} />
+            </div>
+          )}
 
-          {split && (
-            <>
-              <div
-                className="divider"
-                data-dir={splitDir}
-                data-dragging={dragging.current}
-                onPointerDown={onDividerDown}
-                onPointerMove={onDividerMove}
-                onPointerUp={onDividerUp}
-                onPointerCancel={onDividerUp}
-                role="separator"
-                aria-orientation={splitDir === 'row' ? 'vertical' : 'horizontal'}
-                aria-label="Resize panes"
-              >
-                <DividerTrace />
-                <span className="divider__grip" />
-              </div>
+          {split && !paneMaximized && (
+            <div
+              className="divider"
+              data-dir={splitDir}
+              data-dragging={dragging.current}
+              onPointerDown={onDividerDown}
+              onPointerMove={onDividerMove}
+              onPointerUp={onDividerUp}
+              onPointerCancel={onDividerUp}
+              role="separator"
+              aria-orientation={splitDir === 'row' ? 'vertical' : 'horizontal'}
+              aria-label="Resize panes"
+            >
+              <DividerTrace />
+              <span className="divider__grip" />
+            </div>
+          )}
 
-              <div className="panes__slot" style={{ flex: 1 }}>
-                <Pane pane="b" showClose />
-              </div>
-            </>
+          {split && (!paneMaximized || focus === 'b') && (
+            <div className="panes__slot" style={{ flex: paneMaximized ? '1 1 auto' : 1 }}>
+              <Pane pane="b" showClose />
+            </div>
           )}
         </div>
       </div>
+
+      <StatusBar />
 
       {/* Keyed on the nonce so a switch mid-sweep remounts the band from its
           start frame rather than reusing an element already part-way across. */}
@@ -176,6 +182,7 @@ export function App() {
       <Settings />
       <Search />
       <ContextMenu />
+      <CloseConfirm />
 
       {/* Focus-follows-click is handled per pane; this catches the gap between
           them so a click never lands nowhere. */}
@@ -359,16 +366,29 @@ function useWindowTitle(): void {
   }, [])
 }
 
-/** Global chords. Esc closes in priority order: settings → appearance → palette → search. */
+/**
+ * Global chords. Esc closes in priority order: settings → appearance → palette
+ * → search — neither remappable nor part of the resolved keymap below.
+ *
+ * ⌘T, ⌘W and ⌘, are absent on purpose: the native menu declares them as key
+ * equivalents, so AppKit performs the menu item and this handler never sees
+ * the chord. The behaviour lives in lib/menuEvents.ts, and they are not part
+ * of the remappable set in lib/keybindings.ts for the same reason — see that
+ * module's header comment.
+ */
 function useGlobalKeys(): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const store = useStore.getState()
-      const meta = event.metaKey
 
       if (event.key === 'Escape') {
-        // Priority order: settings → appearance → palette → search.
-        if (store.settings.open) {
+        // Priority order: close-confirm → settings → appearance → palette → search.
+        // The confirm dialog sits above everything else it could be layered
+        // over, so backing out of it takes priority over any other overlay.
+        if (store.closeConfirm) {
+          store.cancelClose()
+          event.preventDefault()
+        } else if (store.settings.open) {
           store.closeSettings()
           event.preventDefault()
         } else if (store.appearance.open) {
@@ -384,57 +404,61 @@ function useGlobalKeys(): void {
         return
       }
 
-      if (!meta) {
-        // ⌃L clears the buffer.
-        if (event.ctrlKey && event.key.toLowerCase() === 'l') {
+      const chord = formatChord(event)
+      if (chord === null) return // A bare modifier keypress, not a complete chord.
+
+      const bindings = resolveKeybindings(store.settingsValues.keybindings)
+
+      switch (chord) {
+        case bindings.palette:
+          event.preventDefault()
+          if (store.palette.open) store.closePalette()
+          else store.openPalette()
+          break
+        case bindings.search:
+          event.preventDefault()
+          if (store.search.open) store.closeSearch()
+          else store.openSearch()
+          break
+        case bindings['prev-block']:
+          // ⌘[ / ⌘] step between command blocks — the payoff of the block model.
+          event.preventDefault()
+          jumpBlock(-1)
+          break
+        case bindings['next-block']:
+          event.preventDefault()
+          jumpBlock(1)
+          break
+        case bindings['split-right']:
+          event.preventDefault()
+          store.toggleSplit('row')
+          break
+        case bindings['split-down']:
+          event.preventDefault()
+          store.toggleSplit('col')
+          break
+        case bindings['maximize-pane']:
+          event.preventDefault()
+          store.toggleMaximizePane()
+          break
+        case bindings['focus-left']:
+          event.preventDefault()
+          store.setFocus('a')
+          break
+        case bindings['focus-right']:
+          if (store.split) {
+            event.preventDefault()
+            store.setFocus('b')
+          }
+          break
+        case bindings['clear-buffer']: {
           const id = store.activeSessionId()
           if (id) {
             store.clearBuffer(id)
             event.preventDefault()
           }
+          break
         }
-        return
-      }
-
-      switch (event.key.toLowerCase()) {
-        case 'k':
-          event.preventDefault()
-          if (store.palette.open) store.closePalette()
-          else store.openPalette()
-          break
-        case 'f':
-          // ⌘⇧F only; plain ⌘F is left to the webview.
-          if (event.shiftKey) {
-            event.preventDefault()
-            if (store.search.open) store.closeSearch()
-            else store.openSearch()
-          }
-          break
-        case '[':
-        case ']':
-          // ⌘[ / ⌘] step between command blocks — the payoff of the block model.
-          event.preventDefault()
-          jumpBlock(event.key === ']' ? 1 : -1)
-          break
-        case 'd':
-          event.preventDefault()
-          store.toggleSplit(event.shiftKey ? 'col' : 'row')
-          break
-        // ⌘T, ⌘W and ⌘, are absent on purpose: the native menu declares them as
-        // key equivalents, so AppKit performs the menu item and this handler
-        // never sees the chord. The behaviour lives in lib/menuEvents.ts.
-        case 'arrowleft':
-          if (event.altKey) {
-            event.preventDefault()
-            store.setFocus('a')
-          }
-          break
-        case 'arrowright':
-          if (event.altKey && store.split) {
-            event.preventDefault()
-            store.setFocus('b')
-          }
-          break
         default:
           break
       }

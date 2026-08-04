@@ -263,3 +263,123 @@ describe('renderer toggles', () => {
     expect(detectStructured('git status', DIRTY_STATUS, 0)?.kind).toBe('git')
   })
 })
+
+const VITEST_PASS = `
+ RUN  v3.2.7 /repo
+
+ ✓ src/lib/color.test.ts (20 tests) 3ms
+
+ Test Files  1 passed (1)
+      Tests  20 passed (20)
+   Start at  03:59:34
+   Duration  284ms (transform 27ms, setup 0ms, collect 21ms, tests 3ms, environment 0ms, prepare 36ms)`
+
+const VITEST_FAIL = `
+ RUN  v3.2.7 /repo
+
+ ❯ src/scratch.test.ts (2 tests | 1 failed) 4ms
+   ✓ scratch > passes 1ms
+   × scratch > fails on purpose 3ms
+     → expected 1 to be 2 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/scratch.test.ts > scratch > fails on purpose
+AssertionError: expected 1 to be 2 // Object.is equality
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  03:59:55
+   Duration  268ms (transform 19ms, setup 0ms, collect 13ms, tests 4ms, environment 0ms, prepare 34ms)`
+
+const JEST_FAIL = `FAIL  src/example.test.js
+  Suite name
+    ✓ passes (2 ms)
+    ✕ fails on purpose (3 ms)
+
+  ● Suite name › fails on purpose
+
+    expect(received).toBe(expected)
+
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        0.412 s`
+
+const CARGO_TEST_PASS = `running 13 tests
+test proctree::tests::keeps_a_real_tool_name ... ok
+test detect::tests::reads_makefile_target ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s`
+
+const CARGO_TEST_FAIL = `running 3 tests
+test detect::tests::reads_makefile_target ... ok
+test proctree::tests::keeps_a_real_tool_name ... FAILED
+test proctree::tests::skips_runner_vocabulary_and_flags ... ok
+
+failures:
+
+---- proctree::tests::keeps_a_real_tool_name stdout ----
+assertion failed
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s`
+
+describe('test renderer', () => {
+  it('parses a passing vitest run', () => {
+    const result = detectStructured('npm test', VITEST_PASS, 0)
+    if (result?.kind !== 'test') throw new Error('expected test')
+    expect(result.passed).toBe(20)
+    expect(result.failed).toBe(0)
+    expect(result.duration).toBe('284ms')
+    expect(result.failures).toEqual([])
+  })
+
+  it('parses a failing vitest run with the failed test name', () => {
+    const result = detectStructured('vitest run', VITEST_FAIL, 1)
+    if (result?.kind !== 'test') throw new Error('expected test')
+    expect(result.passed).toBe(1)
+    expect(result.failed).toBe(1)
+    expect(result.failures).toEqual([{ name: 'fails on purpose', suite: 'scratch' }])
+  })
+
+  it('parses a failing jest run with the failed test name', () => {
+    const result = detectStructured('npx jest', JEST_FAIL, 1)
+    if (result?.kind !== 'test') throw new Error('expected test')
+    expect(result.passed).toBe(1)
+    expect(result.failed).toBe(1)
+    expect(result.duration).toBe('0.412')
+    expect(result.failures).toEqual([{ name: 'fails on purpose', suite: 'Suite name' }])
+  })
+
+  it('parses a passing cargo test run', () => {
+    const result = detectStructured('cargo test --lib', CARGO_TEST_PASS, 0)
+    if (result?.kind !== 'test') throw new Error('expected test')
+    expect(result.passed).toBe(13)
+    expect(result.failed).toBe(0)
+    expect(result.duration).toBe('0.04s')
+  })
+
+  it('parses a failing cargo test run with the failed test path', () => {
+    const result = detectStructured('cargo test', CARGO_TEST_FAIL, 101)
+    if (result?.kind !== 'test') throw new Error('expected test')
+    expect(result.passed).toBe(2)
+    expect(result.failed).toBe(1)
+    expect(result.failures).toEqual([
+      { name: 'keeps_a_real_tool_name', suite: 'proctree::tests' },
+    ])
+  })
+
+  it('falls back to text for unrelated commands', () => {
+    expect(detectStructured('npm run test:e2e -- --help', 'usage: ...', 0)).toBeNull()
+  })
+
+  it('does not fire on output with no recognizable summary line', () => {
+    expect(detectStructured('npm test', 'some unrelated log output\nmore lines\n', 0)).toBeNull()
+  })
+
+  it('respects the Behavior opt-out', () => {
+    setRendererEnabled({ test: false })
+    expect(detectStructured('npm test', VITEST_PASS, 0)).toBeNull()
+    setRendererEnabled({ test: true })
+    expect(detectStructured('npm test', VITEST_PASS, 0)?.kind).toBe('test')
+  })
+})

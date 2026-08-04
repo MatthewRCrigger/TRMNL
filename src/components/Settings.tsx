@@ -3,10 +3,18 @@
  * Settings save immediately; there is no Save button and there should not be one.
  */
 
+import { useEffect, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 
 import { isValidColor, type CommandAccent } from '../lib/commandAccent'
 import { anyColorToHex, formatOklch, hexToOklch } from '../lib/color'
+import {
+  ACTIONS,
+  findCollision,
+  formatChord,
+  resolveKeybindings,
+  type ActionId,
+} from '../lib/keybindings'
 import { ColorField } from './ColorField'
 import { IDENTITIES, useStore, type Density, type GhostSource, type Profile, type SettingsTab } from '../state/store'
 import type { RendererId } from '../term/renderers'
@@ -704,6 +712,7 @@ const RENDERER_ROWS: { id: RendererId; label: string }[] = [
   { id: 'serve', label: 'Dev servers → link card' },
   { id: 'err', label: 'Errors → did-you-mean' },
   { id: 'list', label: 'Directory listings → table' },
+  { id: 'test', label: 'Test runs → pass/fail summary' },
 ]
 
 const GHOST_SOURCES: { id: GhostSource; label: string }[] = [
@@ -804,37 +813,130 @@ function BehaviorPane() {
 
 /* --- Keybindings ----------------------------------------------------------- */
 
-const BINDINGS: [string, string][] = [
-  ['⌘K', 'Command palette'],
-  ['⌘D', 'Split right'],
-  ['⌘⇧D', 'Split down'],
+/** Never remappable here: native menu items (see lib/menuEvents.ts), the
+ *  Composer's own Tab handling, and ⌃C. Shown for reference, not editable. */
+const FIXED_BINDINGS: [string, string][] = [
   ['⌘T', 'New session'],
   ['⌘W', 'Close pane'],
   ['⌘,', 'Settings'],
   ['⇥', 'Accept ghost suggestion'],
-  ['⌃L', 'Clear buffer'],
-  ['⌘⌥←/→', 'Focus pane'],
-  ['⌘⇧F', 'Search scrollback'],
-  ['⌘[ / ⌘]', 'Previous / next block'],
 ]
 
 function KeybindingsPane() {
+  const keybindings = useStore((s) => s.settingsValues.keybindings)
+  const setKeybinding = useStore((s) => s.setKeybinding)
+  const bindings = resolveKeybindings(keybindings)
+  const [listening, setListening] = useState<ActionId | null>(null)
+  const [pendingCollision, setPendingCollision] = useState<{
+    action: ActionId
+    chord: string
+    with: ActionId | 'reserved'
+  } | null>(null)
+
+  useEffect(() => {
+    if (!listening) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (event.key === 'Escape') {
+        setListening(null)
+        return
+      }
+
+      const chord = formatChord(event)
+      if (chord === null) return // A bare modifier; keep listening.
+
+      const collision = findCollision(chord, bindings, listening)
+      if (collision) {
+        setPendingCollision({
+          action: listening,
+          chord,
+          with: 'reserved' in collision ? 'reserved' : collision.action,
+        })
+        setListening(null)
+        return
+      }
+
+      setKeybinding(listening, chord)
+      setListening(null)
+    }
+
+    // Capture phase, ahead of everything else — including the app's own
+    // global handler — so the chord being captured never also triggers
+    // whatever it is currently bound to.
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [listening, bindings, setKeybinding])
+
   return (
     <div className="settings__pane">
       <div className="keys">
-        {BINDINGS.map(([chord, action]) => (
+        {ACTIONS.map((action) => (
+          <div className="keys__row" key={action.id}>
+            <span className="keys__chord" data-listening={listening === action.id}>
+              {listening === action.id ? 'PRESS KEYS…' : bindings[action.id]}
+            </span>
+            <span className="keys__action">{action.label}</span>
+            <button
+              className="keys__edit is-btn"
+              onClick={() => {
+                setPendingCollision(null)
+                setListening(listening === action.id ? null : action.id)
+              }}
+              type="button"
+            >
+              {listening === action.id ? 'CANCEL' : 'EDIT'}
+            </button>
+          </div>
+        ))}
+
+        {FIXED_BINDINGS.map(([chord, label]) => (
           <div className="keys__row" key={chord}>
             <span className="keys__chord">{chord}</span>
-            <span className="keys__action">{action}</span>
-            {/* EDIT needs a capture-a-chord flow and conflict detection, which
-                the design does not specify. Rather than ship a dead control, the
-                affordance is disabled and labelled. */}
-            <span className="keys__edit" title="Keybinding editing is not implemented yet">
-              EDIT
+            <span className="keys__action">{label}</span>
+            <span className="keys__edit is-disabled" title="Not remappable">
+              —
             </span>
           </div>
         ))}
       </div>
+
+      {pendingCollision && (
+        <div className="keys__collision">
+          <span className="micro" style={{ color: 'var(--warn)' }}>
+            {pendingCollision.chord} IS ALREADY{' '}
+            {pendingCollision.with === 'reserved'
+              ? 'RESERVED FOR ⌃C CANCEL'
+              : `USED BY ${ACTIONS.find((a) => a.id === pendingCollision.with)?.label.toUpperCase()}`}
+          </span>
+          {pendingCollision.with !== 'reserved' && (
+            <button
+              className="sx__btn is-btn"
+              onClick={() => {
+                setKeybinding(
+                  pendingCollision.action,
+                  pendingCollision.chord,
+                  pendingCollision.with as ActionId,
+                )
+                setPendingCollision(null)
+              }}
+              type="button"
+            >
+              REPLACE
+            </button>
+          )}
+          <button
+            className="sx__btn sx__btn--ghost is-btn"
+            onClick={() => setPendingCollision(null)}
+            type="button"
+          >
+            CANCEL
+          </button>
+        </div>
+      )}
+
       <div className="keys__note micro">⌃C CANCELS THE RUNNING COMMAND AND IS NOT REMAPPABLE</div>
     </div>
   )

@@ -29,6 +29,7 @@ describe('pickSettings', () => {
       'foldThreshold',
       'ghostSource',
       'identityName',
+      'keybindings',
       'renderers',
       'restoreOnLaunch',
       'scrollbackCap',
@@ -75,6 +76,7 @@ describe('pickSettings', () => {
       serve: true,
       err: true,
       list: true,
+      test: true,
     })
   })
 

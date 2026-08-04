@@ -12,10 +12,18 @@
 
 import { useEffect, useRef } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import '@xterm/xterm/css/xterm.css'
 
+import { registerTakeoverLinks } from '../term/takeoverLinks'
+
 interface Props {
+  /** Which session this terminal belongs to — lets the global context menu
+   *  (which has no reference to this instance) look up its hovered link or
+   *  selection. See term/takeoverLinks.ts. */
+  sessionId: string
   /** Bytes already consumed from the PTY before the takeover was detected. */
   backlog: string
   /** Subscribe to subsequent PTY output; returns an unsubscribe. */
@@ -26,7 +34,7 @@ interface Props {
   focused: boolean
 }
 
-export function TerminalView({ backlog, subscribe, onData, onResize, focused }: Props) {
+export function TerminalView({ sessionId, backlog, subscribe, onData, onResize, focused }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   // Held in refs so the effect can stay mount-only; re-creating the terminal on
   // every render would drop the screen contents.
@@ -93,7 +101,42 @@ export function TerminalView({ backlog, subscribe, onData, onResize, focused }: 
 
     const fit = new FitAddon()
     term.loadAddon(fit)
+    // Matches the block stream's own convention (see LineContent in Block.tsx):
+    // plain click stays a normal terminal click (placing the caret, extending a
+    // selection), ⌘-click is what opens the link. A takeover program owns real
+    // mouse input here, so a bare click opening a browser out from under it
+    // would be a much bigger surprise than in the block stream, where a click
+    // only ever meant "select text".
+    //
+    // hover/leave track which URL (if any) is currently under the pointer, so
+    // ContextMenu.tsx — which has no reference to this instance — can offer
+    // "Copy Link" on a right-click without xterm.js exposing a synchronous
+    // "what's at this point" query of its own.
+    let hoveredUrl: string | null = null
+    term.loadAddon(
+      new WebLinksAddon(
+        (event, uri) => {
+          if (!event.metaKey) return
+          void openUrl(uri).catch(() => {})
+        },
+        {
+          hover: (_event, uri) => {
+            hoveredUrl = uri
+          },
+          leave: () => {
+            hoveredUrl = null
+          },
+        },
+      ),
+    )
     term.open(host)
+
+    const unregister = registerTakeoverLinks(sessionId, {
+      get hoveredUrl() {
+        return hoveredUrl
+      },
+      getSelection: () => term.getSelection(),
+    })
 
     // Report the true grid size before writing, so the program's first paint is
     // laid out for the space it actually has.
@@ -146,12 +189,13 @@ export function TerminalView({ backlog, subscribe, onData, onResize, focused }: 
       observer.disconnect()
       disposeInput.dispose()
       unsubscribe()
+      unregister()
       termRef.current = null
       term.dispose()
     }
-    // Mount-only: backlog and subscribe are captured at takeover time.
+    // Mount-only: backlog, subscribe and sessionId are captured at takeover time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return <div className="termview" ref={hostRef} />
+  return <div className="termview" ref={hostRef} data-session-id={sessionId} />
 }
