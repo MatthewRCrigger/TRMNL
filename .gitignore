@@ -4,4 +4,8 @@ src-tauri/target/
 src-tauri/gen/schemas/
 .DS_Store
 *.log
+
+# Signing identity for release builds. Deliberately never committed: the repo is
+# public, and the identity belongs to whoever is building, not to the project.
+.env.local
 design_handoff_grid_terminal/

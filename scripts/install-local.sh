@@ -22,8 +22,10 @@ app="src-tauri/target/release/bundle/macos/TRMNL.app"
 dest="/Applications/TRMNL.app"
 
 if [[ "${1:-}" == "--build" ]]; then
-  : "${APPLE_SIGNING_IDENTITY:=Developer ID Application: Your Name (TEAMID1234)}"
-  export APPLE_SIGNING_IDENTITY
+  # Only the --build path needs an identity; installing an existing bundle does
+  # not re-sign it. Resolved from the environment or .env.local — see
+  # scripts/signing-env.sh.
+  source "$(dirname "$0")/signing-env.sh"
   echo "==> Building"
   npm run tauri build
 elif [[ -n "${1:-}" ]]; then

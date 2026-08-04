@@ -123,8 +123,17 @@ npm run app:release
 ```
 
 `NOTARY_PROFILE` defaults to `TRMNL-notary`, a `notarytool` keychain profile.
-Credentials live there rather than in a `.env` on purpose — the credential is an
+The *password* lives there rather than in a dotfile on purpose — it is an
 app-specific password, and the keychain keeps it encrypted.
+
+The signing **identity** is the other half, and it is deliberately not in the
+repo: `scripts/signing-env.sh` resolves `APPLE_SIGNING_IDENTITY` from the
+environment or a gitignored `.env.local`, and exits with instructions when it
+finds neither. Do not reintroduce a hardcoded default. This repo is public and
+gets forked; a Team ID is not a secret — `codesign -dvvv` reads it out of any
+shipped artifact — but a default identity means a forker's first release build
+fails against a certificate belonging to someone else, which reads as a broken
+repo rather than "supply your own."
 
 Tauri warns mid-build that it is *"skipping app notarization, no APPLE_ID &
 APPLE_PASSWORD … found"*. That is expected: only the `.dmg` needs a ticket, and

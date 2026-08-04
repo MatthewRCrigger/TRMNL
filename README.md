@@ -340,7 +340,23 @@ when clicked is worse than one that says it isn't ready.
 ## Signing and notarization
 
 `npm run app:release` builds, signs, notarizes, and staples both artifacts, then
-verifies them. Credentials come from a `notarytool` keychain profile:
+verifies them.
+
+Nothing about signing is baked into this repo — the certificate and Apple ID
+belong to whoever is building. If you only want to run TRMNL, none of this
+applies: `npm run app` and `npm run app:build` need no identity at all. Signing
+matters only for a build you intend to hand to someone else.
+
+**Your signing identity.** Find yours with `security find-identity -v -p
+codesigning`, then either export it or drop it in `.env.local` at the repo root,
+which is gitignored:
+
+```bash
+APPLE_SIGNING_IDENTITY=Developer ID Application: Your Name (TEAMID1234)
+```
+
+**Notarization credentials** come from a `notarytool` keychain profile, created
+once:
 
 ```bash
 xcrun notarytool store-credentials TRMNL-notary \

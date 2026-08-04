@@ -6,7 +6,9 @@
 # disk image itself ships un-notarized and Gatekeeper rejects it on download.
 # This script runs the build, then notarizes and staples the .dmg separately.
 #
-# Credentials come from the environment or a notarytool keychain profile:
+# Signing and notarization credentials are yours, not the project's — nothing is
+# hardcoded here. See scripts/signing-env.sh for how the identity is resolved,
+# and the README's "Signing and notarization" section for the whole setup.
 #
 #   NOTARY_PROFILE=TRMNL-notary ./scripts/release.sh
 #
@@ -22,8 +24,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-: "${APPLE_SIGNING_IDENTITY:=Developer ID Application: Your Name (TEAMID1234)}"
-export APPLE_SIGNING_IDENTITY
+# Resolves APPLE_SIGNING_IDENTITY from the environment or .env.local, verifies
+# it is in the keychain, and exits with instructions if it is neither.
+source "$(dirname "$0")/signing-env.sh"
 
 # The usual profile, so `npm run app:release` works with no environment at all.
 # Deliberately a keychain profile rather than a dotenv file: the credential is an
@@ -45,18 +48,13 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     echo "error: notary profile '$NOTARY_PROFILE' is unusable — not in the keychain," >&2
     echo "       or its stored credentials are no longer valid. Create it with:" >&2
     echo "         xcrun notarytool store-credentials $NOTARY_PROFILE \\" >&2
-    echo "           --apple-id \"<your-apple-id>\" --team-id \"TEAMID1234\"" >&2
+    echo "           --apple-id \"<your-apple-id>\" --team-id \"<your-team-id>\"" >&2
     exit 1
   fi
 elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
   notary_auth=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
 else
   echo "error: set NOTARY_PROFILE, or all of APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID" >&2
-  exit 1
-fi
-
-if ! security find-identity -v -p codesigning | grep -qF "$APPLE_SIGNING_IDENTITY"; then
-  echo "error: signing identity not in keychain: $APPLE_SIGNING_IDENTITY" >&2
   exit 1
 fi
 
