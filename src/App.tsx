@@ -14,7 +14,7 @@ import { Search } from './components/Search'
 import { Settings } from './components/Settings'
 import { TitleBar } from './components/TitleBar'
 import { listenForMenuEvents } from './lib/menuEvents'
-import { useStore } from './state/store'
+import { listenForConfigSync, useStore } from './state/store'
 
 /**
  * Module scope, so it survives a re-mount of App but not a real app launch.
@@ -69,6 +69,11 @@ export function App() {
   // The native menu is where Settings / New Session / Close Session now come
   // from, including their chords — see lib/menuEvents.ts.
   useEffect(() => listenForMenuEvents(), [])
+
+  // Settings and profiles are application-global, so a change in another window
+  // has to land here too — otherwise each window shows a different profile list
+  // until it is reloaded.
+  useEffect(() => listenForConfigSync(), [])
 
   /* --- divider drag ------------------------------------------------------- */
 

@@ -8,6 +8,7 @@
 
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import {
@@ -770,6 +771,10 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   deleteProfile(id) {
+    // Recorded before the write, so the save below can tell a deliberate delete
+    // apart from a profile this window simply never heard about. Without it the
+    // union in mergeConfig reads the id back off disk and undoes the deletion.
+    deletedProfiles.add(id)
     set((s) => {
       const profiles = s.profiles.filter((p) => p.id !== id)
       return {
@@ -1378,6 +1383,8 @@ export function mergeConfig(
   update: {
     settings: Settings
     profiles: Profile[]
+    /** Ids this window deleted on purpose, so the union cannot resurrect them. */
+    deletedProfiles?: readonly string[]
     workspace: PersistedWorkspace | undefined
     key: string
   },
@@ -1398,7 +1405,39 @@ export function mergeConfig(
   }
 
   file.settings = update.settings
-  file.profiles = update.profiles
+
+  // Profiles are application-global: a profile added in one window has to be
+  // reachable from every other. That makes a wholesale overwrite wrong — this
+  // window's list is only as fresh as the last time it heard about a change, and
+  // assigning it would delete a profile another window added a moment ago.
+  //
+  // So the list is unioned by id against what is already on disk. A profile this
+  // window holds wins for its own id, since it is the one being edited here;
+  // anything on disk that this window has never seen is carried through
+  // untouched.
+  //
+  // Deletion cannot be expressed by absence under those rules — an absent id is
+  // indistinguishable from one this window never learned about, and unioning
+  // would resurrect it on the next save. `deletedProfiles` records the ids this
+  // window removed on purpose, so a real delete still lands.
+  const onDisk = Array.isArray(file.profiles) ? (file.profiles as Profile[]) : []
+  const deleted = new Set(update.deletedProfiles ?? [])
+  const byId = new Map<string, Profile>()
+  for (const p of onDisk) {
+    if (p && typeof p.id === 'string' && !deleted.has(p.id)) byId.set(p.id, p)
+  }
+  for (const p of update.profiles) byId.set(p.id, p)
+  const merged = [...byId.values()]
+
+  // Exactly one profile may be the default, and two windows can each believe
+  // theirs is. The saving window's choice wins, because it is the one that just
+  // acted; the alternative is a file with two defaults and a launch that picks
+  // whichever comes first.
+  const defaultId = update.profiles.find((p) => p.isDefault)?.id
+  file.profiles = defaultId
+    ? merged.map((p) => (p.isDefault && p.id !== defaultId ? { ...p, isDefault: false } : p))
+    : merged
+
   // An absent workspace means restore-on-launch is off, so the stale entry has
   // to go — otherwise turning the setting off would leave the old layout on disk
   // to be restored the next time it is turned on.
@@ -1406,6 +1445,66 @@ export function mergeConfig(
   else delete file[update.key]
 
   return JSON.stringify(file, null, 2)
+}
+
+/**
+ * Profile ids this window has deleted, for as long as the window lives.
+ *
+ * Held outside the store because it is bookkeeping for the writer, not state the
+ * UI renders. It is never cleared: a tombstone costs one string, and dropping it
+ * early would let a stale window on its next save union the profile back in.
+ */
+const deletedProfiles = new Set<string>()
+
+/**
+ * Event carrying globally-shared config to the other windows.
+ *
+ * Settings and profiles are application-wide, so a change made in one window has
+ * to reach the others or each shows a different truth until reloaded. The file on
+ * disk is the durable record; this is what makes the *live* windows agree.
+ */
+const CONFIG_SYNC = 'trmnl://config-sync'
+
+interface ConfigSync {
+  /** Emitting window's label, so it can ignore its own broadcast. */
+  from: string
+  settings: Settings
+  profiles: Profile[]
+}
+
+/**
+ * Apply another window's config change to this one.
+ *
+ * Only the globally-shared slices are taken. Sessions, panes and focus are this
+ * window's own and must never arrive from outside — that would make two windows
+ * mirror each other rather than be independent views.
+ */
+export function listenForConfigSync(): () => void {
+  const pending = listen<ConfigSync>(CONFIG_SYNC, ({ payload }) => {
+    if (payload.from === windowLabel) return
+    useStore.setState((s) => {
+      // Re-resolve the accent: the incoming change may alter the identity, the
+      // command rules, or the colour of the profile this window has focused.
+      const next = { ...s, settingsValues: payload.settings, profiles: payload.profiles }
+      return {
+        settingsValues: payload.settings,
+        profiles: payload.profiles,
+        commandAccent: syncCommandAccent(next),
+      }
+    })
+    // Renderer toggles and density live outside the store's own reactivity.
+    setRendererEnabled(payload.settings.renderers)
+    applyTheme(payload.settings, useStore.getState().commandAccent)
+  })
+
+  let unlisten: UnlistenFn | undefined
+  void pending.then((fn) => {
+    unlisten = fn
+  })
+  return () => {
+    void pending.then((fn) => fn())
+    unlisten?.()
+  }
 }
 
 /** Debounced write of the persisted slice. Settings save immediately. */
@@ -1445,12 +1544,25 @@ function persist(): void {
           contents: mergeConfig(raw, {
             settings: settingsValues,
             profiles,
+            deletedProfiles: [...deletedProfiles],
             workspace,
             key: workspaceKey(),
           }),
         }),
       )
       .catch((err) => console.error('trmnl: could not save config', err))
+
+    // Tell the other windows, so they do not sit on a stale profile list until
+    // reloaded. Emitted after the write is queued rather than awaited: the file
+    // is the durable record, and a failed write should not also mean the live
+    // windows disagree about what the user just did.
+    void emit(CONFIG_SYNC, {
+      from: windowLabel,
+      settings: settingsValues,
+      profiles,
+    } satisfies ConfigSync).catch(() => {
+      // A window closing mid-emit is routine; the file still has the change.
+    })
   }, 180)
 }
 
