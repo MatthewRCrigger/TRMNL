@@ -5,6 +5,61 @@
  * the handoff is explicit that 8.5px must not ship.
  */
 
+/* --- Button states -------------------------------------------------------- */
+
+/* Every push-button in the app is lit at rest and inverts on hover: the accent
+ * moves from the glyph to the interior, and the glyph drops to the page colour.
+ *
+ * Lit at rest rather than on hover because a control worth clicking is worth
+ * finding without hunting for it. That costs the old "dull until hover" signal,
+ * so hover needs somewhere new to go — filling the interior is a bigger change
+ * than brightening a border, and it survives at 15px where a border shift does
+ * not.
+ *
+ * `.is-btn` carries only the state, never the geometry: size, padding and font
+ * stay with each component, since a rail close and a settings action share this
+ * behaviour and nothing else. Applied via a class rather than a bare `button`
+ * selector because several buttons here are state indicators (segmented
+ * segments, toggles, swatches) where fill already means *selected* — giving
+ * those a hover fill would make hover indistinguishable from selection.
+ *
+ * Destructive controls opt into --err with `.is-btn--danger`. They keep the same
+ * mechanic so they still feel like buttons, but flooding a delete control with
+ * the identity colour would make it read as the confirm action.
+ */
+.is-btn {
+  border: 1px solid var(--ac);
+  color: var(--act);
+  background: transparent;
+  transition: color 0.16s, border-color 0.16s, background-color 0.16s;
+}
+
+.is-btn:hover:not(:disabled) {
+  color: var(--on-ac);
+  background: var(--ac);
+  border-color: var(--ac);
+}
+
+.is-btn--danger {
+  border-color: var(--err);
+  color: var(--err);
+}
+
+.is-btn--danger:hover:not(:disabled) {
+  color: var(--on-ac);
+  background: var(--err);
+  border-color: var(--err);
+}
+
+/* Disabled keeps the dulled outline the whole app used to wear at rest, which is
+ * now unique to unavailable controls — it no longer collides with the resting
+ * state of a live button. */
+.is-btn:disabled {
+  border-color: var(--bd2);
+  color: var(--fgdd);
+  background: transparent;
+}
+
 /* --- Window frame --------------------------------------------------------- */
 
 .frame {
@@ -105,19 +160,11 @@
   place-items: center;
   width: 30px;
   height: 24px;
-  border: 1px solid var(--bd2);
-  color: var(--fgdd);
-  background: transparent;
-  transition: border-color 0.16s, color 0.16s, background 0.16s;
 }
 
-.layoutbtn[data-active='true'] {
-  background: var(--wash);
-  border-color: var(--bd);
-  color: var(--act);
-}
-
-.layoutbtn:hover { color: var(--act); border-color: var(--bd); }
+/* The active layout keeps a wash so the current choice still reads as chosen
+ * among three now-identically-lit buttons. */
+.layoutbtn[data-active='true'] { background: var(--wash); }
 
 .layoutbtn__glyph {
   display: block;
@@ -251,6 +298,9 @@
   transition: opacity 0.16s;
 }
 
+/* Hidden until the row is hovered, then already lit — the reveal is the
+ * discoverability signal here, so the button does not also need to be dull. A
+ * permanently visible close on every row would put a red x down the whole rail. */
 .rail__close {
   grid-area: 1 / 1;
   display: grid;
@@ -258,35 +308,43 @@
   width: 15px;
   height: 15px;
   font-size: 9px;
-  color: var(--fgdd);
   opacity: 0;
-  transition: opacity 0.16s, color 0.16s, border-color 0.16s;
-  border: 1px solid transparent;
+  transition: opacity 0.16s, color 0.16s, border-color 0.16s, background-color 0.16s;
 }
 
 .rail__row:hover .rail__badge { opacity: 0; }
 .rail__row:hover .rail__close { opacity: 1; }
-.rail__close:hover { color: var(--err); border-color: var(--err); }
 
 .rail__count { color: var(--act); }
 
+/* The "add" affordances. Lit and filling like every other button, but the border
+ * stays dashed in both states — the dash is what says this creates something
+ * rather than acting on something, and a solid fill would spend that signal. */
 .rail__new,
 .dashed {
   display: block;
   width: calc(100% - 24px);
   margin: 12px;
   padding: 7px;
-  border: 1px dashed var(--bd2);
+  border: 1px dashed var(--ac);
   font-family: var(--mono);
   font-weight: 500;
   font-size: var(--t-label);
   letter-spacing: 0.16em;
-  color: var(--fgdd);
-  transition: color 0.16s, border-color 0.16s;
+  color: var(--act);
+  background: transparent;
+  transition: color 0.16s, border-color 0.16s, background-color 0.16s;
 }
 
+/* The dash has to change colour along with the glyph — left at --ac it vanishes
+ * into the fill it sits on, and the button loses the one mark that distinguishes
+ * it from a solid action. */
 .rail__new:hover,
-.dashed:hover { color: var(--act); border-color: var(--ac); }
+.dashed:hover {
+  color: var(--on-ac);
+  background: var(--ac);
+  border-color: var(--on-ac);
+}
 
 .dashed--inline {
   width: auto;
@@ -550,13 +608,8 @@
   width: 16px;
   height: 16px;
   flex: none;
-  border: 1px solid var(--bd2);
   font-size: 9px;
-  color: var(--fgdd);
-  transition: color 0.16s, border-color 0.16s;
 }
-
-.pane__close:hover { color: var(--act); border-color: var(--ac); }
 
 .pane__body {
   position: relative;
@@ -778,13 +831,19 @@
 }
 
 /* Hover actions: outlined in the knocked-out colour instead of the accent. Same
- * 88% floor as the metadata, for the same ARES-driven reason. */
+ * 88% floor as the metadata, for the same ARES-driven reason.
+ *
+ * This is also where the app-wide inversion is already spent — the header *is*
+ * the fill, so these run dark-on-accent at rest and hover deepens the chip
+ * rather than filling it. The `:not(:disabled)` only matches the specificity of
+ * `.is-btn:hover`, which would otherwise repaint them accent-on-transparent
+ * against the accent bar. */
 .block__head .block__action {
   color: color-mix(in oklch, var(--bg) 88%, transparent);
   border-color: color-mix(in oklch, var(--bg) 42%, transparent);
 }
 
-.block__head .block__action:hover {
+.block__head .block__action:hover:not(:disabled) {
   color: var(--bg);
   border-color: var(--bg);
   background: color-mix(in oklch, var(--bg) 14%, transparent);
@@ -847,28 +906,18 @@
 
 .block__action {
   padding: 2px 6px;
-  border: 1px solid var(--bd2);
   font-family: var(--mono);
   font-size: var(--t-label);
   letter-spacing: 0.1em;
-  color: var(--fgdd);
-  transition: color 0.16s, border-color 0.16s;
 }
-
-.block__action:hover { color: var(--act); border-color: var(--ac); }
 
 .block__cancel {
   flex: none;
   padding: 2px 6px;
-  background: color-mix(in oklch, var(--err) 12%, transparent);
-  border: 1px solid color-mix(in oklch, var(--err) 45%, transparent);
   font-family: var(--mono);
   font-size: var(--t-label);
   letter-spacing: 0.1em;
-  color: var(--err);
 }
-
-.block__cancel:hover { background: color-mix(in oklch, var(--err) 20%, transparent); }
 
 /* On the accent bar the tinted-transparent treatment has nothing to tint, so the
  * cancel button becomes a solid dark chip with the error colour on top. */
@@ -878,8 +927,9 @@
   color: var(--err);
 }
 
-.block__head .block__cancel:hover {
+.block__head .block__cancel:hover:not(:disabled) {
   background: color-mix(in oklch, var(--err) 22%, var(--bg));
+  color: var(--err);
 }
 
 .block__chip {
@@ -1077,24 +1127,14 @@
 .sx__btn {
   padding: 5px 11px;
   background: var(--wash);
-  border: 1px solid var(--bd);
   font-family: var(--mono);
   font-weight: 500;
   font-size: var(--t-label);
   letter-spacing: 0.14em;
-  color: var(--act);
-  transition: background 0.16s;
 }
 
-.sx__btn:hover { background: color-mix(in oklch, var(--ac) 16%, transparent); }
-
-.sx__btn--ghost {
-  background: transparent;
-  border-color: var(--bd2);
-  color: var(--fgdd);
-}
-
-.sx__btn--ghost:hover { color: var(--act); border-color: var(--bd); background: transparent; }
+/* Ghost is the secondary of the pair: same lit outline, no wash behind it. */
+.sx__btn--ghost { background: transparent; }
 
 .sx-git__branch { font-size: var(--t-micro); color: var(--fgdd); }
 
@@ -1174,14 +1214,9 @@
   gap: 10px;
   padding: 6px 11px;
   background: var(--wash);
-  border: 1px solid var(--bd);
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--act);
-  transition: background 0.16s;
 }
-
-.sx-err__chip:hover { background: color-mix(in oklch, var(--ac) 16%, transparent); }
 
 /* --- Composer ------------------------------------------------------------- */
 
@@ -1815,13 +1850,8 @@
   width: 19px;
   height: 19px;
   flex: none;
-  border: 1px solid var(--bd2);
   font-size: 10px;
-  color: var(--fgdd);
-  transition: color 0.16s, border-color 0.16s;
 }
-
-.settings__close:hover { color: var(--act); border-color: var(--ac); }
 
 .settings__body { display: flex; flex: 1; min-height: 0; }
 
@@ -2020,12 +2050,7 @@
 .env__del {
   width: 28px;
   flex: none;
-  border: 1px solid var(--bd2);
-  color: var(--fgdd);
-  transition: color 0.16s, border-color 0.16s;
 }
-
-.env__del:hover { color: var(--err); border-color: var(--err); }
 
 .warnrow {
   margin-bottom: 18px;
@@ -2146,13 +2171,8 @@
   width: 28px;
   height: 28px;
   flex: none;
-  border: 1px solid var(--bd2);
   font-size: var(--t-micro);
-  color: var(--fgdd);
-  transition: color 0.16s, border-color 0.16s;
 }
-
-.ccolors__del:hover { color: var(--err); border-color: var(--err); }
 
 /* --- Per-profile accent ---------------------------------------------------- */
 
@@ -2201,20 +2221,19 @@
 
 .btn {
   padding: 8px 13px;
-  border: 1px solid var(--bd2);
   font-family: var(--mono);
   font-weight: 500;
   font-size: var(--t-label);
   letter-spacing: 0.14em;
-  color: var(--fgd);
-  transition: color 0.16s, border-color 0.16s, background 0.16s;
 }
 
-.btn:hover { color: var(--act); border-color: var(--bd); }
-.btn--primary { background: var(--wash); border-color: var(--bd); color: var(--act); }
-.btn[data-lit='true'] { color: var(--act); border-color: var(--bd); }
-.btn--danger { color: var(--err); border-color: color-mix(in oklch, var(--err) 30%, transparent); }
-.btn--danger:hover { color: var(--err); border-color: var(--err); background: color-mix(in oklch, var(--err) 10%, transparent); }
+/* Primary carries a wash at rest so it still outranks its neighbours now that
+ * every button is lit; hover fills it the rest of the way via .is-btn. */
+.btn--primary { background: var(--wash); }
+
+/* data-lit was how a .btn showed itself active back when the resting state was
+ * dull. Every button is lit now, so this only needs to hold the fill. */
+.btn[data-lit='true'] { background: var(--wash); }
 
 /* --- Preference rows ------------------------------------------------------ */
 
@@ -2245,20 +2264,33 @@
   color: var(--fgdd);
 }
 
-.stepper { display: flex; border: 1px solid var(--bd2); flex: none; }
+/* The stepper is one control, so the lit outline goes on the unit and the two
+ * buttons inside it are regions of that box, not buttons in their own right. */
+.stepper { display: flex; border: 1px solid var(--ac); flex: none; }
 
+/* Deliberately not `.is-btn`: filling half of a three-cell control solid leaves a
+ * lit block wedged against an unlit value and reads as a rendering fault rather
+ * than as a hover. A tint marks which half is under the cursor while keeping the
+ * unit legible as one thing. */
 .stepper__btn {
   width: 26px;
   padding: 5px 0;
+  border: none;
   border-right: 1px solid var(--bd2);
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--fgdd);
-  transition: color 0.16s;
+  color: var(--act);
+  background: transparent;
+  transition: color 0.16s, background-color 0.16s;
 }
 
 .stepper__btn:last-child { border-right: none; border-left: 1px solid var(--bd2); }
-.stepper__btn:hover { color: var(--act); }
+
+.stepper__btn:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--ac) 22%, transparent);
+}
+
+.stepper__btn:disabled { color: var(--fgdd); background: transparent; }
 
 .stepper__val {
   display: grid;
@@ -2430,15 +2462,8 @@
   width: 18px;
   height: 18px;
   flex: none;
-  border: 1px solid var(--bd2);
   font-size: 10px;
-  color: var(--fgdd);
-  transition: color 0.16s, border-color 0.16s;
 }
-
-.search__step:hover:not(:disabled),
-.search__close:hover { color: var(--act); border-color: var(--ac); }
-.search__step:disabled { opacity: 0.35; }
 
 .search__results { max-height: 260px; overflow-y: auto; }
 
