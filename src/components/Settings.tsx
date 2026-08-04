@@ -704,6 +704,7 @@ const RENDERER_ROWS: { id: RendererId; label: string }[] = [
   { id: 'serve', label: 'Dev servers → link card' },
   { id: 'err', label: 'Errors → did-you-mean' },
   { id: 'list', label: 'Directory listings → table' },
+  { id: 'test', label: 'Test runs → pass/fail summary' },
 ]
 
 const GHOST_SOURCES: { id: GhostSource; label: string }[] = [

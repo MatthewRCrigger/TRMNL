@@ -4,6 +4,7 @@ import { memo, useEffect, useState } from 'react'
 
 import {
   blockState,
+  blockToMarkdown,
   chipLabel,
   formatDuration,
   formatElapsed,
@@ -41,7 +42,7 @@ export const Block = memo(function Block({
 }: Props) {
   const state = blockState(block)
   const running = state === 'running' || state === 'live'
-  const [copied, setCopied] = useState<'output' | 'command' | null>(null)
+  const [copied, setCopied] = useState<'output' | 'command' | 'markdown' | null>(null)
 
   // Live elapsed timer, ticking only while the block runs.
   const [now, setNow] = useState(() => Date.now())
@@ -57,10 +58,14 @@ export const Block = memo(function Block({
       ? formatDuration(block.ms)
       : ''
 
-  const copy = async (what: 'output' | 'command') => {
+  const copy = async (what: 'output' | 'command' | 'markdown') => {
     try {
       const text =
-        what === 'command' ? block.cmd : block.lines.map((l) => l.text).join('\n')
+        what === 'command'
+          ? block.cmd
+          : what === 'markdown'
+            ? blockToMarkdown(block)
+            : block.lines.map((l) => l.text).join('\n')
       await navigator.clipboard.writeText(text)
       setCopied(what)
       window.setTimeout(() => setCopied(null), 1200)
@@ -139,6 +144,14 @@ export const Block = memo(function Block({
               type="button"
             >
               {copied === 'command' ? 'COPIED' : 'COPY CMD'}
+            </button>
+            <button
+              className="block__action is-btn"
+              onClick={() => void copy('markdown')}
+              title="Copy command, output and exit status as markdown"
+              type="button"
+            >
+              {copied === 'markdown' ? 'COPIED' : 'COPY MD'}
             </button>
             <button
               className="block__action is-btn"
