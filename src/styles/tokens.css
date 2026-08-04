@@ -78,6 +78,21 @@
   --well: #070c14;
   --pane-idle: #05080e;
 
+  /* The glyph colour for a control whose interior is filled solid accent — see
+   * `.is-btn` in app.css. Lives with the surfaces because that is what it is: the
+   * page showing through the glyph, not a colour of its own.
+   *
+   * This is the one place `contrast-color()` would be answering the right
+   * question, text genuinely sitting *on* the accent rather than on the page, but
+   * it is unnecessary here: --ac carries a 0.62 lightness floor, so a filled
+   * interior is always light enough for the darkest surface to read against it —
+   * verified at the worst case, where a picked black floors to a mid grey. A
+   * fixed value also keeps the inversion identical across every identity, where
+   * contrast-color() would flip to white on the darker picks and make the same
+   * button look like a different control.
+   */
+  --on-ac: var(--page);
+
   /* --- Hairlines and fills, all accent-derived ---------------------------- */
   --bd: color-mix(in oklch, var(--ac) 26%, transparent);
   --bd2: color-mix(in oklch, var(--ac) 13%, transparent);

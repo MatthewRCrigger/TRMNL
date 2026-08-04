@@ -169,10 +169,10 @@ function GitStatus({
         </div>
       ))}
       <div className="sx-git__actions">
-        <button className="sx__btn" onClick={() => onRun('git add -A')} type="button">
+        <button className="sx__btn is-btn" onClick={() => onRun('git add -A')} type="button">
           STAGE ALL
         </button>
-        <button className="sx__btn sx__btn--ghost" onClick={() => onRun('git diff')} type="button">
+        <button className="sx__btn sx__btn--ghost is-btn" onClick={() => onRun('git diff')} type="button">
           DIFF
         </button>
         {data.branch && (
@@ -241,7 +241,7 @@ function ErrorPanel({
       {data.suggestion && (
         <div className="sx-err__suggest">
           <span className="micro">DID YOU MEAN</span>
-          <button className="sx-err__chip" onClick={() => onRun(data.suggestion!)} type="button">
+          <button className="sx-err__chip is-btn" onClick={() => onRun(data.suggestion!)} type="button">
             {data.suggestion}
             <span className="kbd">↵</span>
           </button>

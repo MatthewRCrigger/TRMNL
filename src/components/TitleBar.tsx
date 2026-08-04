@@ -101,7 +101,7 @@ function LayoutButton({
 }) {
   return (
     <button
-      className="layoutbtn"
+      className="layoutbtn is-btn"
       data-active={active}
       onClick={onClick}
       title={title}

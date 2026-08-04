@@ -117,7 +117,7 @@ export const Block = memo(function Block({
         <span className="block__gap" />
 
         {running ? (
-          <button className="block__cancel no-drag" onClick={onCancel} type="button">
+          <button className="block__cancel is-btn is-btn--danger no-drag" onClick={onCancel} type="button">
             ⌃C CANCEL
           </button>
         ) : (
@@ -125,7 +125,7 @@ export const Block = memo(function Block({
             {/* Output and command are separate: wanting one without the other is
                 the common case, and a single COPY that grabs both serves neither. */}
             <button
-              className="block__action"
+              className="block__action is-btn"
               onClick={() => void copy('output')}
               title="Copy output"
               type="button"
@@ -133,7 +133,7 @@ export const Block = memo(function Block({
               {copied === 'output' ? 'COPIED' : 'COPY OUT'}
             </button>
             <button
-              className="block__action"
+              className="block__action is-btn"
               onClick={() => void copy('command')}
               title="Copy command"
               type="button"
@@ -141,7 +141,7 @@ export const Block = memo(function Block({
               {copied === 'command' ? 'COPIED' : 'COPY CMD'}
             </button>
             <button
-              className="block__action"
+              className="block__action is-btn"
               onClick={() => onRerun(block.cmd)}
               type="button"
             >

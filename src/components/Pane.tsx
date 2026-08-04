@@ -127,7 +127,7 @@ export function Pane({ pane, showClose }: Props) {
         <span className="pane__status">{focused ? 'FOCUSED' : 'IDLE'}</span>
         {showClose && (
           <button
-            className="pane__close no-drag"
+            className="pane__close is-btn no-drag"
             onClick={closePane}
             type="button"
             aria-label="Close pane"
