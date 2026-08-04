@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_IDENTITY, IDENTITIES, pickSettings } from './store'
+import { DEFAULT_IDENTITY, IDENTITIES, pickSettings, profileAccent, type Profile } from './store'
 
 describe('pickSettings', () => {
   it('defaults to the USER identity', () => {
@@ -148,5 +148,44 @@ describe('pickSettings: command accents', () => {
       ],
     } as never)
     expect(s.commandAccents.map((r) => r.id)).toEqual(['a'])
+  })
+})
+
+describe('profileAccent', () => {
+  const profile = (over: Partial<Profile> = {}): Profile => ({
+    id: 'p1',
+    name: 'client',
+    cwd: '~',
+    shell: '/bin/zsh',
+    connectVia: 'local',
+    startupCmd: '',
+    env: [],
+    ...over,
+  })
+
+  it('returns the profile colour so one client reads as one colour', () => {
+    const colour = 'oklch(0.75 0.18 152)'
+    expect(profileAccent([profile({ accent: colour })], 'p1')).toBe(colour)
+  })
+
+  it('inherits the global identity when the profile sets no colour', () => {
+    // Null is "no override", which is what leaves --ac on settings.accent.
+    expect(profileAccent([profile()], 'p1')).toBeNull()
+  })
+
+  it('inherits when the session has no profile at all', () => {
+    // An adopted session after a reload: the profile that spawned it is gone.
+    expect(profileAccent([profile({ accent: 'oklch(0.75 0.18 152)' })], undefined)).toBeNull()
+  })
+
+  it('inherits when the profile has been deleted out from under the session', () => {
+    expect(profileAccent([], 'p1')).toBeNull()
+  })
+
+  it('rejects a hand-edited colour rather than breaking every derived token', () => {
+    // Profiles are not validated at load, so this is the layer that has to hold:
+    // an unparseable --ac takes the whole interface with it via color-mix.
+    expect(profileAccent([profile({ accent: 'not-a-color' })], 'p1')).toBeNull()
+    expect(profileAccent([profile({ accent: '' })], 'p1')).toBeNull()
   })
 })

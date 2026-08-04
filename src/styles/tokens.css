@@ -31,8 +31,41 @@
 
 :root {
   /* --- Identity (accent). Default: USER. ---------------------------------- */
-  --ac: oklch(0.93 0.045 220);
+  /* The colour as chosen. Nothing reads this directly — see --ac below. */
+  --ac-raw: oklch(0.93 0.045 220);
+
+  /* The accent everything derives from, with a lightness floor.
+   *
+   * Every hairline, wash and fill in this file is `--ac` at low opacity over a
+   * near-black surface, which silently assumes the accent is *lighter* than the
+   * page. The five shipped identities all are, so the assumption held until the
+   * colour picker made an arbitrary colour one click away. Set black and the
+   * whole interface dissolves: `--bd` becomes oklch(0 0 0) at 26% over #07090d,
+   * which is nothing at all.
+   *
+   * 0.62 is the floor for structure — enough for a hairline to read against the
+   * page without lifting a mid-tone accent so far that it stops looking like
+   * the colour that was picked. Relative colour syntax raises only L, so hue
+   * and chroma survive; a fully desaturated pick (black, #424242) has no hue to
+   * keep and correctly lands on grey rather than inventing one.
+   */
+  --ac: oklch(from var(--ac-raw) max(l, 0.62) c h);
   --acd: color-mix(in oklch, var(--ac) 55%, #000);
+
+  /* The accent as *text*, floored higher than the structural one above.
+   *
+   * Fills only need to be visible; text has to be readable. A deep navy lands at
+   * 1.5:1 against --page — invisible rather than merely low-contrast — and the
+   * 0.62 structural floor only lifts it to 5.4:1. 0.7 clears 7:1 (WCAG AAA) at
+   * every hue while leaving all five shipped identities untouched, since they
+   * already sit above it.
+   *
+   * Deliberately not `contrast-color()`, which is supported in this webview but
+   * answers a different question: it returns black or white for text on a given
+   * background, whereas this is accent-coloured text on a fixed dark surface.
+   * Using it would discard the accent and paint every lit control plain white.
+   */
+  --act: oklch(from var(--ac) max(l, 0.7) c h);
 
   /* --- Surfaces ---------------------------------------------------------- */
   --bg: oklch(0.055 0.018 250);

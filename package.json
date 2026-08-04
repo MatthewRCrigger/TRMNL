@@ -1,7 +1,7 @@
 {
   "name": "trmnl",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.4.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,8 @@
     "tauri": "tauri",
     "app": "tauri dev",
     "app:build": "tauri build",
+    "app:release": "./scripts/release.sh",
+    "app:install": "./scripts/install-local.sh",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -17,6 +19,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "@tauri-apps/plugin-os": "^2.3.2",

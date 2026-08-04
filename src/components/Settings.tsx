@@ -3,7 +3,11 @@
  * Settings save immediately; there is no Save button and there should not be one.
  */
 
+import { open } from '@tauri-apps/plugin-dialog'
+
 import { isValidColor, type CommandAccent } from '../lib/commandAccent'
+import { anyColorToHex, formatOklch, hexToOklch } from '../lib/color'
+import { ColorField } from './ColorField'
 import { IDENTITIES, useStore, type Density, type GhostSource, type Profile, type SettingsTab } from '../state/store'
 import type { RendererId } from '../term/renderers'
 import { Toggle } from './Appearance'
@@ -84,6 +88,78 @@ export function Settings() {
 
 /* --- Profiles -------------------------------------------------------------- */
 
+/** The name a profile is born with, and the signal that it is still untouched. */
+export const DEFAULT_PROFILE_NAME = 'new profile'
+
+/**
+ * The trailing folder of an absolute path.
+ *
+ * Returns empty for the filesystem root, which has no folder name — better to
+ * leave the profile called `new profile` than to rename it to nothing.
+ *
+ * Deliberately not shared with the identically-shaped helper in windowTitle.ts:
+ * that one exists to shorten a path for display and is free to change how it
+ * abbreviates, while this one names a profile. Coupling them would mean a
+ * display tweak silently renaming profiles.
+ */
+export function folderName(path: string): string {
+  const trimmed = path.replace(/\/+$/, '')
+  const slash = trimmed.lastIndexOf('/')
+  return slash === -1 ? trimmed : trimmed.slice(slash + 1)
+}
+
+/**
+ * Pick a working directory with the system folder panel.
+ *
+ * Opened at the profile's current directory so the panel starts where the user
+ * is already pointing rather than at the last place macOS happened to remember.
+ * A `~` path has to be expanded first — the panel takes a real filesystem path
+ * and silently ignores one it cannot resolve, which would look like the setting
+ * being ignored.
+ *
+ * The chosen path is folded back to `~` on the way in, because that is the form
+ * the rest of the app stores and displays: a profile that reads `~/src/thing`
+ * before browsing should not become `/Users/you/src/thing` afterwards.
+ *
+ * A profile still called `new profile` is renamed to the chosen folder, since
+ * that name means the form was never filled in rather than that the user wanted
+ * it. Any other name is left alone — including one that matches a previously
+ * browsed folder, because by then it is a name the user has seen and kept.
+ *
+ * Cancelling returns null and changes nothing, which is the whole contract —
+ * there is no error case worth surfacing beyond that.
+ */
+async function browseForCwd(
+  profile: Profile,
+  apply: (patch: Partial<Profile>) => void,
+): Promise<void> {
+  const home = useStore.getState().host?.home ?? ''
+  const expand = (p: string) =>
+    home && p.startsWith('~') ? `${home}${p.slice(1)}` : p
+
+  try {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: expand(profile.cwd) || home || undefined,
+      title: 'Choose a working directory',
+    })
+    if (typeof picked !== 'string') return
+
+    const cwd = home && picked.startsWith(home) ? `~${picked.slice(home.length)}` : picked
+    const patch: Partial<Profile> = { cwd }
+
+    const folder = folderName(picked)
+    if (profile.name === DEFAULT_PROFILE_NAME && folder) patch.name = folder
+
+    apply(patch)
+  } catch (err) {
+    // A denied capability or a panel that cannot open is worth a line, but not
+    // worth interrupting the settings pane over.
+    console.error('trmnl: could not open the folder panel', err)
+  }
+}
+
 function ProfilesPane() {
   const profiles = useStore((s) => s.profiles)
   const selectedId = useStore((s) => s.settings.selectedProfile)
@@ -105,7 +181,7 @@ function ProfilesPane() {
   const addProfile = () => {
     const profile: Profile = {
       id: `p-${Date.now().toString(36)}`,
-      name: 'new profile',
+      name: DEFAULT_PROFILE_NAME,
       cwd: host?.home ?? '~',
       shell: host?.shell ?? '/bin/zsh',
       connectVia: 'local',
@@ -129,10 +205,19 @@ function ProfilesPane() {
               onClick={() => selectProfile(profile.id)}
               type="button"
             >
+              {/* The dot carries the profile's own colour when it has one, so
+                  the list reads as the set of clients at a glance. Remote still
+                  overrides it — that a profile is not local matters more than
+                  which client it belongs to. */}
               <span
                 className="dot"
                 style={{
-                  color: profile.connectVia === 'local' ? 'var(--ac)' : 'var(--warn)',
+                  color:
+                    profile.connectVia !== 'local'
+                      ? 'var(--warn)'
+                      : profile.accent && isValidColor(profile.accent)
+                        ? profile.accent
+                        : 'var(--ac)',
                 }}
               />
               <span className="profiles__meta">
@@ -162,13 +247,30 @@ function ProfilesPane() {
               onChange={(e) => patch({ name: e.target.value })}
             />
 
+            <label className="form__label micro">COLOR</label>
+            <ProfileAccentField profile={selected} patch={patch} />
+
             <label className="form__label micro" htmlFor="p-cwd">WORKING DIR</label>
-            <input
-              className="form__input"
-              id="p-cwd"
-              value={selected.cwd}
-              onChange={(e) => patch({ cwd: e.target.value })}
-            />
+            {/* The field stays editable rather than becoming a read-only target
+                for the picker: typing is still the fastest way in when the path
+                is known, and `~` cannot be reached through a folder panel at
+                all. Browse is for the case the panel is better at — finding a
+                directory you would otherwise have to remember the path to. */}
+            <div className="form__row">
+              <input
+                className="form__input"
+                id="p-cwd"
+                value={selected.cwd}
+                onChange={(e) => patch({ cwd: e.target.value })}
+              />
+              <button
+                className="btn"
+                type="button"
+                onClick={() => void browseForCwd(selected, patch)}
+              >
+                BROWSE…
+              </button>
+            </div>
 
             <label className="form__label micro" htmlFor="p-shell">SHELL</label>
             <input
@@ -309,6 +411,115 @@ function looksSecret(key: string): boolean {
   return /token|secret|password|passwd|api[_-]?key|credential|private[_-]?key/i.test(key)
 }
 
+/**
+ * Per-profile accent: inherit, one of the identities, or anything CSS parses.
+ *
+ * Inherit is a first-class choice rather than the absence of one, because the
+ * two behave differently over time — a profile set to USER stays that colour
+ * when the global identity changes, while an inheriting profile follows it. The
+ * row makes that difference selectable instead of leaving it to whether a field
+ * happens to be empty.
+ */
+function ProfileAccentField({
+  profile,
+  patch,
+}: {
+  profile: Profile
+  patch: (changes: Partial<Profile>) => void
+}) {
+  const inherits = !profile.accent
+  // A custom colour is anything that is not one of the shipped identities; only
+  // then is the text field worth showing, so the common case stays one click.
+  const named = IDENTITIES.find((i) => i.value === profile.accent)
+  const valid = inherits || isValidColor(profile.accent!)
+
+  return (
+    <div className="paccent">
+      <div className="paccent__picks">
+        <button
+          className="paccent__pick paccent__pick--inherit"
+          data-selected={inherits}
+          onClick={() => patch({ accent: undefined })}
+          type="button"
+          aria-pressed={inherits}
+          title="Follow the global identity"
+        >
+          INHERIT
+        </button>
+
+        {IDENTITIES.map((identity) => {
+          const selected = profile.accent === identity.value
+          return (
+            <button
+              className="paccent__pick"
+              data-selected={selected}
+              key={identity.name}
+              onClick={() => patch({ accent: identity.value })}
+              type="button"
+              aria-pressed={selected}
+              title={identity.name}
+            >
+              <span className="paccent__chip" style={{ background: identity.value }} />
+              {identity.name}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Shown once the colour is not an identity, so a hand-picked value stays
+          editable rather than being unreachable through the swatches. */}
+      {!inherits && !named && (
+        <ColorField
+          value={profile.accent ?? ''}
+          onChange={(accent) => patch({ accent })}
+          label="Custom profile colour"
+        />
+      )}
+
+      {/* Nudges an identity value off the swatch it matches, so the field opens
+          on the colour already showing rather than resetting to an unrelated
+          one. Without the nudge the value stays equal to an identity, `named`
+          stays true, and the field never appears at all. */}
+      <button
+        className="paccent__custombtn"
+        onClick={() => patch({ accent: nudgeOffIdentity(profile.accent) })}
+        type="button"
+        data-selected={!inherits && !named}
+      >
+        CUSTOM…
+      </button>
+
+      {!valid && (
+        <div className="warnrow">
+          ⚠ UNREADABLE COLOUR — THIS PROFILE WILL USE THE GLOBAL IDENTITY UNTIL CORRECTED
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Where CUSTOM… starts from when there is nothing to carry over: a mid-band
+ *  colour that is already valid, so the field never opens in an error state the
+ *  user did not cause. */
+const DEFAULT_CUSTOM_ACCENT = 'oklch(0.75 0.18 300)'
+
+/**
+ * A colour that is guaranteed not to equal one of the identity swatches.
+ *
+ * Switching to CUSTOM should keep the colour on screen rather than jumping, but
+ * a value identical to an identity reads as *that identity being selected* —
+ * which is what hides the custom field. Rounding through hex both preserves the
+ * colour visually and moves the stored string off the exact identity token.
+ */
+function nudgeOffIdentity(accent: string | undefined): string {
+  if (!accent) return DEFAULT_CUSTOM_ACCENT
+  const hex = anyColorToHex(accent)
+  const back = hex ? hexToOklch(hex) : null
+  if (!back) return DEFAULT_CUSTOM_ACCENT
+  const rendered = formatOklch(back)
+  return IDENTITIES.some((i) => i.value === rendered) ? DEFAULT_CUSTOM_ACCENT : rendered
+}
+
 /* --- Appearance ------------------------------------------------------------ */
 
 const DENSITIES: Density[] = ['compact', 'normal', 'roomy']
@@ -420,15 +631,8 @@ function CommandColorsSection() {
 
       <div className="ccolors">
         {rules.map((rule, i) => {
-          const valid = isValidColor(rule.color)
           return (
             <div className="ccolors__row" key={rule.id}>
-              <span
-                className="ccolors__chip"
-                data-valid={valid}
-                style={valid ? { background: rule.color } : undefined}
-                aria-hidden="true"
-              />
               <input
                 className="ccolors__match"
                 value={rule.match}
@@ -444,15 +648,12 @@ function CommandColorsSection() {
                 placeholder="label"
                 aria-label="Rule label"
               />
-              <input
-                className="ccolors__color"
-                data-invalid={!valid}
+              {/* The swatch doubles as the picker, so the row keeps its width
+                  while losing the oklch box that used to sit beside it. */}
+              <ColorField
                 value={rule.color}
-                onChange={(e) => patch(i, { color: e.target.value })}
-                placeholder="oklch(0.75 0.18 152)"
-                aria-label="Accent colour"
-                aria-invalid={!valid}
-                spellCheck={false}
+                onChange={(color) => patch(i, { color })}
+                label={`Colour for ${rule.label || rule.match || 'rule'}`}
               />
               <Toggle
                 on={rule.enabled}

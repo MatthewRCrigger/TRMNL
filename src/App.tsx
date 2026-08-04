@@ -1,7 +1,9 @@
 /** Window shell: title bar, rail, panes, divider, and the modal surfaces. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
+import { formatWindowTitle } from './lib/windowTitle'
 import { Appearance } from './components/Appearance'
 import { Boot } from './components/Boot'
 import { ContextMenu } from './components/ContextMenu'
@@ -11,7 +13,8 @@ import { Rail } from './components/Rail'
 import { Search } from './components/Search'
 import { Settings } from './components/Settings'
 import { TitleBar } from './components/TitleBar'
-import { useStore } from './state/store'
+import { listenForMenuEvents } from './lib/menuEvents'
+import { listenForConfigSync, useStore } from './state/store'
 
 /**
  * Module scope, so it survives a re-mount of App but not a real app launch.
@@ -61,6 +64,16 @@ export function App() {
   }, [syncRailForWidth])
 
   useGlobalKeys()
+  useWindowTitle()
+
+  // The native menu is where Settings / New Session / Close Session now come
+  // from, including their chords — see lib/menuEvents.ts.
+  useEffect(() => listenForMenuEvents(), [])
+
+  // Settings and profiles are application-global, so a change in another window
+  // has to land here too — otherwise each window shows a different profile list
+  // until it is reloaded.
+  useEffect(() => listenForConfigSync(), [])
 
   /* --- divider drag ------------------------------------------------------- */
 
@@ -288,6 +301,64 @@ function jumpBlock(direction: 1 | -1): void {
   window.setTimeout(() => target.removeAttribute('data-jumped'), 600)
 }
 
+/**
+ * Keep the macOS window title describing the focused session.
+ *
+ * Subscribed to the store directly rather than through selectors, because the
+ * title depends on almost everything — focus, the active session, its cwd, its
+ * running block, its grid — and pulling all of that through `useStore` would
+ * re-render the whole window shell on every output chunk just to compute a
+ * string. The subscriber runs on every store write instead, which is cheap: it
+ * reads five fields, formats them, and compares.
+ *
+ * That comparison is the important part. Output streaming updates the store many
+ * times a second while producing an identical title, and `setTitle` is an IPC
+ * call to the native side — so the guard is what keeps this from flooding the
+ * bridge. The title only actually changes on the transitions that matter: a
+ * command starting or settling, a cd, a focus or session switch, a resize.
+ */
+function useWindowTitle(): void {
+  useEffect(() => {
+    // Held outside the subscriber so it survives across store writes; the empty
+    // initial value guarantees the first computed title is always sent, even if
+    // it is the same "TRMNL" the config booted with.
+    let applied = ''
+
+    const sync = (state: ReturnType<typeof useStore.getState>) => {
+      const pane = state.panes[state.focus]
+      const sessionId = pane.sessions[pane.active]
+      const session = sessionId ? state.sessions[sessionId] : undefined
+
+      // Only the last block can be running — a session runs one command at a
+      // time — so this is the command the window is currently occupied with.
+      const last = session?.blocks.at(-1)
+      const running = last?.running ? last : undefined
+
+      const title = formatWindowTitle({
+        cwd: session?.cwd,
+        // A block opened by an unintegrated shell carries no command text; the
+        // process tree is the only description of what is running in that case.
+        command: running ? running.cmd || session?.tools[0] : undefined,
+        shell: session?.shell,
+        home: state.host?.home,
+        cols: session?.cols,
+        rows: session?.rows,
+      })
+
+      if (title === applied) return
+      applied = title
+      // Best-effort: a title that fails to apply is cosmetic, and throwing here
+      // would take down a store subscriber on every subsequent write.
+      void getCurrentWindow()
+        .setTitle(title)
+        .catch(() => {})
+    }
+
+    sync(useStore.getState())
+    return useStore.subscribe(sync)
+  }, [])
+}
+
 /** Global chords. Esc closes in priority order: settings → appearance → palette → search. */
 function useGlobalKeys(): void {
   useEffect(() => {
@@ -349,27 +420,9 @@ function useGlobalKeys(): void {
           event.preventDefault()
           store.toggleSplit(event.shiftKey ? 'col' : 'row')
           break
-        case 't':
-          event.preventDefault()
-          void store.newSession()
-          break
-        case 'w': {
-          event.preventDefault()
-          // Split: close the pane. Solo: close the session — otherwise ⌘W would
-          // do nothing at all in the common case.
-          if (store.split) {
-            store.closePane()
-          } else {
-            const id = store.activeSessionId()
-            if (id) void store.closeSession(id)
-          }
-          break
-        }
-        case ',':
-          event.preventDefault()
-          if (store.settings.open) store.closeSettings()
-          else store.openSettings()
-          break
+        // ⌘T, ⌘W and ⌘, are absent on purpose: the native menu declares them as
+        // key equivalents, so AppKit performs the menu item and this handler
+        // never sees the chord. The behaviour lives in lib/menuEvents.ts.
         case 'arrowleft':
           if (event.altKey) {
             event.preventDefault()

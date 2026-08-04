@@ -90,13 +90,16 @@ export const Block = memo(function Block({
       // a divider into empty space.
       data-empty={!block.structured && visibleLines.length === 0}
       // A block that claimed an accent keeps it for good, so the record of what
-      // ran stays legible after the global accent reverts. Overriding --ac on the
-      // block itself rather than styling the header directly means the spine,
-      // chips and every color-mix-derived hairline inside follow along — the same
-      // property that makes the global switcher work, scoped to one block.
+      // ran stays legible after the global accent reverts. Overriding the accent
+      // on the block itself rather than styling the header directly means the
+      // spine, chips and every color-mix-derived hairline inside follow along —
+      // the same property that makes the global switcher work, scoped to one
+      // block. Sets --ac-raw so the lightness floor in tokens.css still applies;
+      // writing --ac here would replace the floored derivation with the raw
+      // value and reintroduce the invisible-accent case locally.
       style={
         block.accent
-          ? ({ borderLeftColor: spineVar(state), '--ac': block.accent } as React.CSSProperties)
+          ? ({ borderLeftColor: spineVar(state), '--ac-raw': block.accent } as React.CSSProperties)
           : { borderLeftColor: spineVar(state) }
       }
     >
