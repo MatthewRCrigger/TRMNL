@@ -81,8 +81,23 @@ Two non-obvious facts, both verified against a live tree:
 Deliberately a dotfile, not Application Support.
 
 Every window writes to that one file, so a save merges rather than blindly
-serialising — settings and profiles are global, workspace is per-window under its
-own key. See `mergeConfig`.
+serialising. **Profiles are application-global**: a profile added in one window
+must be reachable from every other, so `mergeConfig` unions them by id against
+what is on disk rather than assigning this window's list. Assigning it deleted
+profiles another window had just added — a stale list is indistinguishable from
+an authoritative one.
+
+Deletion therefore cannot be expressed by absence: an id missing from this
+window's list looks the same as one it never learned about, and the union would
+resurrect it. `deletedProfiles` carries the ids this window removed on purpose.
+Any new globally-shared collection needs the same treatment.
+
+Workspace layout is the opposite — per-window, under its own key.
+
+Live windows are kept in step by a `trmnl://config-sync` event carrying settings
+and profiles (`listenForConfigSync`). Only the shared slices travel; sessions,
+panes and focus are the window's own, and syncing those would make two windows
+mirror each other rather than be independent views.
 
 Profiles are **not** validated on load; colours are validated at the point of use
 (`profileAccent`) so a hand-edited file cannot break the theme. Nothing seeds this
