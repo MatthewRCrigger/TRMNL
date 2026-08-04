@@ -12,6 +12,7 @@ import { Pane } from './components/Pane'
 import { Palette } from './components/Palette'
 import { Search } from './components/Search'
 import { Settings } from './components/Settings'
+import { StatusBar } from './components/StatusBar'
 import { TitleBar } from './components/TitleBar'
 import { listenForMenuEvents } from './lib/menuEvents'
 import { listenForConfigSync, useStore } from './state/store'
@@ -162,6 +163,8 @@ export function App() {
           )}
         </div>
       </div>
+
+      <StatusBar />
 
       {/* Keyed on the nonce so a switch mid-sweep remounts the band from its
           start frame rather than reusing an element already part-way across. */}

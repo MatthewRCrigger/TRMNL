@@ -79,6 +79,60 @@
   min-height: 0;
 }
 
+/* Telemetry, full width along the bottom — was a vertical rail footer; moving
+ * it here after the rail's removal is what gave it back the horizontal room
+ * to lay every stat out in one row instead of stacking them. */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+  height: 22px;
+  padding: 0 12px;
+  background: var(--rail);
+  border-top: 1px solid var(--bd2);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--fgdd);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.statusbar__stat {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.statusbar__label { letter-spacing: 0.1em; }
+.statusbar__value { color: var(--act); }
+
+/* Fixed-width value cells so a rate ticking from `8K` to `1.2M`, or CPU from
+ * `9%` to `100%`, cannot nudge anything to its right — this row updates twice
+ * a second and the clock at the end is the last thing that should ever move. */
+.statusbar__net {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.statusbar__netarrow { color: var(--fgdd); }
+
+.statusbar__netval {
+  width: 38px;
+  text-align: right;
+  color: var(--fgd);
+}
+
+.statusbar__clock {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .frame__sink {
   position: absolute;
   inset: 0;
@@ -197,23 +251,6 @@
 
 .titlebar__palette:hover { border-color: var(--ac); }
 .titlebar__palette:hover .titlebar__palettetext { color: var(--act); }
-
-/* One-row CPU/mem readout — the title bar's replacement for the rail footer's
- * full telemetry panel, which had the vertical space for a sparkline and a
- * per-core breakdown that a single title-bar row does not. */
-.titlebar__telemetry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  color: var(--fgdd);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-}
-
-.titlebar__telstat { white-space: nowrap; }
 
 .titlebar__identity {
   display: flex;
