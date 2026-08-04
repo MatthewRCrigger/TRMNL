@@ -1,10 +1,34 @@
 # TRMNL
 
-A TRON-inspired terminal for macOS. Built from the `design_handoff_grid_terminal`
-bundle; ship target is that document's **turn 3 / option 3a**.
+A TRON-inspired terminal for macOS.
 
 This is a real terminal — real PTYs, real shells, real ANSI — not a themed
-viewer. The block model sits above the emulator rather than replacing it.
+viewer. The block model sits above the emulator rather than replacing it: each
+command is one addressable unit, with boundaries reported by the shell rather
+than guessed at.
+
+**Status: early.** It is used daily by its author and shared with a small group.
+Interfaces and config format may still change between versions.
+
+## Install
+
+Download the latest `.dmg` from
+[Releases](https://github.com/MatthewRCrigger/TRMNL/releases), open it, and drag
+TRMNL to Applications. Builds are signed and notarized, so they open without a
+Gatekeeper warning.
+
+**Apple Silicon only** — Intel Macs are not supported and there are no plans to
+add them. Requires macOS 11 or later.
+
+To build from source, see [Running it](#running-it).
+
+## Licence and credits
+
+MIT — see [LICENSE](LICENSE).
+
+The visual system derives from [The Gridcn](https://github.com/educlopez/thegridcn-ui),
+an open-source TRON-inspired shadcn/ui theme. TRMNL uses its `oklch()` token
+values and visual conventions, not its code.
 
 ---
 
@@ -212,6 +236,12 @@ reflects whatever path the backend reports.
 
 ## Deviations from the prototype worth knowing
 
+TRMNL was built against a design handoff document — a written spec with
+screenshots that defined the visual system, the token set, and which states were
+deliberately left undesigned. "The handoff" below refers to that document. It is
+not in this repository, but the decisions it drove are recorded here and in the
+comments, which is what matters for changing the code.
+
 - **Auto-scroll sticks to bottom only when already at bottom**, with a
   `↓ JUMP TO LATEST` affordance. The prototype scrolled unconditionally, which
   fights the user the moment they scroll up.
@@ -359,3 +389,16 @@ spctl -a -vvv -t install src-tauri/target/release/bundle/macos/TRMNL.app
 Profile environment variables are stored in plaintext. The Profiles pane warns
 when a key looks like a credential, but **Keychain routing is not implemented**.
 The handoff flags this for security review before shipping; treat it as open.
+
+## Contributing
+
+Bug reports and feature ideas are welcome as
+[issues](https://github.com/MatthewRCrigger/TRMNL/issues). Include the version
+from the welcome screen, your shell, and what you ran.
+
+Pull requests are **not being accepted yet** — this is a solo project moving
+fast, and unreviewed PRs would sit. That will change once the interfaces settle.
+If you want to build on it, the licence permits forking.
+
+Working on the code with an AI agent: read [AGENTS.md](AGENTS.md) first. It is
+the short list of things that have already cost someone an afternoon.
