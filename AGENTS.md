@@ -104,8 +104,22 @@ and Gatekeeper rejects it outright with "TRMNL is damaged", not a click-through
 warning.
 
 ```bash
-NOTARY_PROFILE=TRMNL-notary npm run app:release
+npm run app:release
 ```
+
+`NOTARY_PROFILE` defaults to `TRMNL-notary`, a `notarytool` keychain profile.
+Credentials live there rather than in a `.env` on purpose — the credential is an
+app-specific password, and the keychain keeps it encrypted.
+
+Tauri warns mid-build that it is *"skipping app notarization, no APPLE_ID &
+APPLE_PASSWORD … found"*. That is expected: only the `.dmg` needs a ticket, and
+the `.app` inside it clears Gatekeeper through the disk image's. Giving Tauri
+credentials buys a second round trip to Apple and nothing else.
+
+For the same reason the two artifacts are verified differently — the `.app` with
+`spctl -t exec`, the `.dmg` with `spctl -t install` *and* `stapler validate`.
+Requiring a stapled ticket on the `.app` fails every release while printing
+`accepted` on the very next line.
 
 Bump the version in **all four** places or the app misreports itself:
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,

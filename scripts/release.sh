@@ -25,6 +25,12 @@ cd "$(dirname "$0")/.."
 : "${APPLE_SIGNING_IDENTITY:=Developer ID Application: Your Name (TEAMID1234)}"
 export APPLE_SIGNING_IDENTITY
 
+# The usual profile, so `npm run app:release` works with no environment at all.
+# Deliberately a keychain profile rather than a dotenv file: the credential is an
+# app-specific password, and the keychain keeps it encrypted where a .env would
+# leave it in plaintext next to the source.
+: "${NOTARY_PROFILE:=TRMNL-notary}"
+
 # Resolve notarization credentials up front — failing here beats failing after a
 # full Rust release build.
 notary_auth=()
@@ -55,6 +61,12 @@ if ! security find-identity -v -p codesigning | grep -qF "$APPLE_SIGNING_IDENTIT
 fi
 
 echo "==> Building and signing"
+# Tauri will warn here that it is "skipping app notarization, no APPLE_ID &
+# APPLE_PASSWORD ... found". That is expected and wanted. Notarizing the .app
+# would be a second round trip to Apple for an artifact that ships inside the
+# .dmg and does not need a ticket of its own — Gatekeeper clears it through the
+# disk image's. The credentials are withheld from Tauri on purpose; this script
+# notarizes the thing that actually ships, below.
 npm run tauri build
 
 app="src-tauri/target/release/bundle/macos/TRMNL.app"
@@ -77,16 +89,39 @@ xcrun stapler staple "$dmg"
 
 echo "==> Verifying"
 failed=0
-for target in "$app" "$dmg"; do
-  if spctl -a -t install "$target" >/dev/null 2>&1 && \
-     xcrun stapler validate "$target" >/dev/null 2>&1; then
-    echo "  ok       $target"
+
+# What each artifact has to prove differs, and demanding the same of both is
+# wrong in a way that reads as a broken release.
+#
+# The .dmg is what ships, so it carries the notarization ticket and must both
+# pass Gatekeeper and validate as stapled. The .app inside it has no ticket of
+# its own — Tauri only staples the .app when it notarized that .app itself,
+# which is not this path — and it does not need one: Gatekeeper accepts it
+# through the disk image's ticket, and that is exactly what a user's copy looks
+# like after dragging it out. Requiring `stapler validate` on the .app failed
+# every release while printing `accepted` directly underneath.
+#
+# The type flag differs too: `-t install` is for installers and disk images,
+# `-t exec` for an application bundle.
+check() { # <label> <spctl-type> <path> [require-staple]
+  local label=$1 type=$2 target=$3 staple=${4:-no} ok=1
+  spctl -a -t "$type" "$target" >/dev/null 2>&1 || ok=0
+  if [[ "$staple" == staple ]]; then
+    xcrun stapler validate "$target" >/dev/null 2>&1 || ok=0
+  fi
+  if (( ok )); then
+    echo "  ok       $label"
   else
-    echo "  FAILED   $target"
-    spctl -a -vvv -t install "$target" 2>&1 | sed 's/^/           /'
+    echo "  FAILED   $label"
+    spctl -a -vvv -t "$type" "$target" 2>&1 | sed 's/^/           /'
+    [[ "$staple" == staple ]] &&
+      xcrun stapler validate "$target" 2>&1 | tail -1 | sed 's/^/           /'
     failed=1
   fi
-done
+}
+
+check "$app" exec    "$app"
+check "$dmg" install "$dmg" staple
 
 if (( failed )); then
   echo "==> Release NOT distributable — see failures above" >&2
