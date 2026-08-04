@@ -141,6 +141,23 @@ script. Grant it under System Settings → Privacy & Security → Automation.
 Builds are **arm64 only**; `aarch64-apple-darwin` is the sole installed Rust
 target, so Intel Macs cannot run TRMNL at all.
 
+## Installing locally
+
+```bash
+npm run app:install            # copy the existing build to /Applications
+npm run app:install -- --build # build first, then copy
+```
+
+Separate from `app:release` because the two want different things: shipping needs
+a notarized `.dmg`, while running it yourself needs neither the disk image nor the
+round trip to Apple — a bundle you built locally has no quarantine attribute, so
+Gatekeeper never challenges it.
+
+The script refuses to install while TRMNL is running from `/Applications`, since
+replacing a bundle under a live process leaves a half-written copy. It uses
+`ditto` rather than `cp` to preserve the extended attributes the signature is
+computed over, and re-verifies the signature afterward.
+
 ## House style
 
 Match the surrounding code. Comments here explain *why*, especially where a
