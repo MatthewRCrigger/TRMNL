@@ -46,10 +46,13 @@ export interface SessionCallbacks {
   /** The shell process itself ended. `code` is null when the OS could not report one. */
   onExit?: (code: number | null) => void
   /**
-   * A full-screen program took over (or handed back). While `active` is true the
-   * pane must render a real terminal instead of the block stream.
+   * A full-screen program's screen state. `'active'` while it owns the
+   * terminal, `'finished'` once it has exited but the user has not dismissed
+   * its last frame yet, `'closed'` once they have (or a new one begins). The
+   * pane renders a real terminal instead of the block stream for both of the
+   * first two — see `dismissTakeover`.
    */
-  onTakeover?: (active: boolean) => void
+  onTakeover?: (state: 'active' | 'finished' | 'closed') => void
 }
 
 /** Commands whose processes are not expected to exit. */
@@ -326,6 +329,15 @@ export class PtySession {
 
   /** A full-screen program owns the screen; the pane renders a terminal. */
   private takeover = false
+  /**
+   * The program has exited but its last frame is still on screen, pending the
+   * user dismissing it. Block parsing has already resumed underneath — this
+   * only keeps the terminal overlay itself from disappearing on its own. See
+   * the friction this replaced: sessions used to snap back to the block view
+   * the instant a Shopify CLI (or similar) command finished, taking whatever
+   * it had just printed with it before anyone could read it.
+   */
+  private takeoverFinished = false
   /** Rolling detector for repainting UIs that never switch screen buffers. */
   private repaint = new RepaintDetector()
   /** Output from the takeover chunk onward, replayed into the new terminal. */
@@ -366,6 +378,7 @@ export class PtySession {
 
   private beginTakeover(chunk: string): void {
     this.takeover = true
+    this.takeoverFinished = false
     this.takeoverBacklog = chunk
 
     // Whatever the block collected before the takeover is half-drawn screen
@@ -383,12 +396,11 @@ export class PtySession {
 
     // Handlers attach after the callback mounts the terminal, so the first
     // chunk is delivered via the backlog rather than the handler set.
-    this.cbs.onTakeover?.(true)
+    this.cbs.onTakeover?.('active')
   }
 
   private endTakeover(): void {
     this.takeover = false
-    this.takeoverBacklog = ''
     this.parser.reset()
     this.repaint.reset()
     // An exiting program restores the terminal modes it changed — modifyOtherKeys,
@@ -398,7 +410,24 @@ export class PtySession {
     // is the whole of what this block should say, so further output is dropped
     // until the shell's next prompt reopens a block.
     this.sealed = this.current?.interactive === true
-    this.cbs.onTakeover?.(false)
+
+    // The overlay itself stays up — showing the program's last frame — until
+    // the user dismisses it. `takeoverBacklog` is deliberately kept, not
+    // cleared: it is what lets a freshly (re)mounted terminal still paint that
+    // frame. See `dismissTakeover`.
+    this.takeoverFinished = true
+    this.cbs.onTakeover?.('finished')
+  }
+
+  /**
+   * The user has read the finished program's last frame and is done with it.
+   * Only now does the pane actually drop back to the block stream.
+   */
+  dismissTakeover(): void {
+    if (!this.takeoverFinished) return
+    this.takeoverFinished = false
+    this.takeoverBacklog = ''
+    this.cbs.onTakeover?.('closed')
   }
 
   private handleData(chunk: string): void {

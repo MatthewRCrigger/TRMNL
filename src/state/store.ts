@@ -105,8 +105,13 @@ export interface Session {
   /** History for ↑/↓ recall, newest last. */
   history: string[]
   historyIndex: number | null
-  /** A full-screen program owns this session; render a terminal, not blocks. */
-  takeover: boolean
+  /**
+   * A full-screen program owns this session — render a terminal, not blocks.
+   * `'finished'` means it has already exited but its last frame is still
+   * shown, pending the user dismissing it (see `dismissTakeover` on the pty
+   * session); the pane renders identically to `'active'` except for that.
+   */
+  takeover: 'active' | 'finished' | false
   /**
    * Command words of everything running under this session's shell, from the
    * native process-tree scan. Empty when nothing is running.
@@ -287,6 +292,8 @@ interface StoreState {
   submitInput: (id: string) => Promise<void>
   runCommand: (cmd: string, pane?: PaneId) => Promise<void>
   cancelCurrent: (id: string) => Promise<void>
+  /** Dismiss a finished takeover's last frame, returning the pane to blocks. */
+  dismissTakeover: (id: string) => void
   acceptGhost: (id: string) => void
   /** TAB: ask the shell to complete. Returns candidates when ambiguous. */
   requestCompletion: (id: string) => Promise<string[]>
@@ -413,11 +420,12 @@ function sessionCallbacks(set: StoreSet, id: string): SessionCallbacks {
         return { sessions: { ...s.sessions, [id]: { ...existing, cwd: newCwd } } }
       })
     },
-    onTakeover: (active) => {
+    onTakeover: (state) => {
       set((s) => {
         const existing = s.sessions[id]
         if (!existing) return s
-        return { sessions: { ...s.sessions, [id]: { ...existing, takeover: active } } }
+        const takeover = state === 'closed' ? false : state
+        return { sessions: { ...s.sessions, [id]: { ...existing, takeover } } }
       })
     },
     onExit: (code) => {
@@ -1256,6 +1264,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
   async cancelCurrent(id) {
     await ptys.get(id)?.cancel()
+  },
+
+  dismissTakeover(id) {
+    ptys.get(id)?.dismissTakeover()
   },
 
   acceptGhost(id) {

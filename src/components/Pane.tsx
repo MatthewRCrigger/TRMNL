@@ -31,6 +31,7 @@ export function Pane({ pane, showClose }: Props) {
   const submitInput = useStore((s) => s.submitInput)
   const runCommand = useStore((s) => s.runCommand)
   const cancelCurrent = useStore((s) => s.cancelCurrent)
+  const dismissTakeover = useStore((s) => s.dismissTakeover)
   const acceptGhost = useStore((s) => s.acceptGhost)
   const requestCompletion = useStore((s) => s.requestCompletion)
   const recallHistory = useStore((s) => s.recallHistory)
@@ -183,7 +184,13 @@ export function Pane({ pane, showClose }: Props) {
 
         {/* An interactive program gets a real terminal in an overlay above the
             pane it was launched from, rather than replacing the pane outright —
-            the block history stays visible behind it as context. */}
+            the block history stays visible behind it as context.
+
+            It stays up past the program's own exit, too: this used to snap
+            back to the block view the instant the process ended, which took
+            whatever it had just printed — a Shopify CLI table, say — with it
+            before anyone could read it. Now "finished" gets the same overlay,
+            frozen on its last frame, until the user dismisses it on purpose. */}
         {session.takeover && pty && (
           <div className="takeover">
             <div className="takeover__panel">
@@ -191,24 +198,42 @@ export function Pane({ pane, showClose }: Props) {
               <span className="bracket bracket--br" style={{ width: 11, height: 11 }} />
 
               <div className="takeover__head">
-                <span className="dot" style={{ color: 'var(--warn)' }} />
-                <span className="micro">INTERACTIVE SESSION</span>
+                <span
+                  className="dot"
+                  style={{ color: session.takeover === 'finished' ? 'var(--fgdd)' : 'var(--warn)' }}
+                />
+                <span className="micro">
+                  {session.takeover === 'finished' ? 'SESSION FINISHED' : 'INTERACTIVE SESSION'}
+                </span>
                 <span className="takeover__cmd">
                   {session.blocks.at(-1)?.cmd ?? ''}
                 </span>
                 <span className="rule" />
-                {/* Same action as ⌃C in the terminal below — this is a second,
-                    more discoverable way to reach it, not a stronger kill. Most
-                    people reaching for this want out of the one command, not the
-                    whole session, so it stops there rather than closing the pane. */}
-                <button
-                  className="block__cancel is-btn is-btn--danger no-drag"
-                  onClick={() => void cancelCurrent(sessionId)}
-                  type="button"
-                  title="Send ⌃C to the running program"
-                >
-                  ⌃C EXIT
-                </button>
+                {session.takeover === 'finished' ? (
+                  // The program is already gone; this just puts the pane back
+                  // to the block view whenever the user is done reading.
+                  <button
+                    className="block__cancel is-btn no-drag"
+                    onClick={() => dismissTakeover(sessionId)}
+                    type="button"
+                    title="Close and return to the block view"
+                  >
+                    EXIT
+                  </button>
+                ) : (
+                  // Same action as ⌃C in the terminal below — this is a second,
+                  // more discoverable way to reach it, not a stronger kill. Most
+                  // people reaching for this want out of the one command, not the
+                  // whole session, so it stops there rather than closing the pane.
+                  <button
+                    className="block__cancel is-btn is-btn--danger no-drag"
+                    onClick={() => void cancelCurrent(sessionId)}
+                    type="button"
+                    title="Send ⌃C to the running program"
+                  >
+                    ⌃C EXIT
+                  </button>
+                )}
               </div>
 
               <TerminalView
@@ -216,8 +241,12 @@ export function Pane({ pane, showClose }: Props) {
                 sessionId={sessionId}
                 backlog={pty.getTakeoverBacklog()}
                 subscribe={(handler) => pty.onRaw(handler)}
-                onData={(data) => void pty.write(data)}
+                onData={(data) => {
+                  if (session.takeover === 'finished') return
+                  void pty.write(data)
+                }}
                 onResize={(cols, rows) => {
+                  if (session.takeover === 'finished') return
                   void pty.resize(cols, rows)
                   setSessionSize(sessionId, cols, rows)
                 }}
@@ -275,7 +304,7 @@ export function Pane({ pane, showClose }: Props) {
         value={session.input}
         ghost={session.ghost}
         focused={focused && !session.takeover && !session.failed && !session.exited}
-        disabled={session.takeover || !!session.failed || !!session.exited}
+        disabled={!!session.takeover || !!session.failed || !!session.exited}
         shellLabel={shellLabel(host?.shell)}
         onChange={(v) => setSessionInput(sessionId, v)}
         onSubmit={() => void submitInput(sessionId)}
