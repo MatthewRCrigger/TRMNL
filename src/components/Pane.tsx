@@ -61,6 +61,17 @@ export function Pane({ pane, showClose }: Props) {
   const blockCount = session?.blocks.length ?? 0
   const lastLineCount = session?.blocks.at(-1)?.lines.length ?? 0
 
+  // Growing the window can bring the bottom of the content back into view
+  // without a scroll event ever firing — re-check "at bottom" whenever the
+  // scroll container's own size changes, not just when its content does.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(onScroll)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [onScroll])
+
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el || !stick.current) return
@@ -94,13 +105,18 @@ export function Pane({ pane, showClose }: Props) {
       const rows = Math.max(6, Math.floor(el.clientHeight / (12 * lh)))
       void getPty(sessionId)?.resize(cols, rows)
       setSessionSize(sessionId, cols, rows)
+      // The pane growing can bring the bottom of the stream back into view
+      // without a scroll event ever firing — this observer already fires on
+      // every window resize, so piggyback the same re-check here rather than
+      // trust the scroll container's own (WKWebView-flaky) ResizeObserver alone.
+      onScroll()
     }
 
     report()
     const ro = new ResizeObserver(report)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [sessionId, session?.takeover, setSessionSize])
+  }, [sessionId, session?.takeover, setSessionSize, onScroll])
 
   if (!session || !sessionId) {
     return <div className="pane" data-focused={focused} />
