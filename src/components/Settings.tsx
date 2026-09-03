@@ -1,13 +1,22 @@
-/** Settings window — ⌘,
+/** `SETTINGS .PANELS` — ⌘,
  *
- * Settings save immediately; there is no Save button and there should not be one.
+ * A Dialog at 1000 with a 200px SideNav down the left. The DISPLAY group gains
+ * PANELS and TYPE where the identity section used to be: with GRID functionally
+ * monochrome there is no accent to pick, and what is genuinely adjustable is the
+ * panel geometry every surface is drawn with.
+ *
+ * The PANELS pane documents its own frame — the toggles you change there are
+ * the ones drawing the dialog you are changing them in. That is deliberate, and
+ * it is why they apply immediately.
+ *
+ * Settings save immediately; there is no Save button and there should not be
+ * one. The REVERT / APPLY footer is REVERT-to-defaults and a close, not a
+ * commit step.
  */
 
 import { useEffect, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 
-import { isValidColor, type CommandAccent } from '../lib/commandAccent'
-import { anyColorToHex, formatOklch, hexToOklch } from '../lib/color'
 import {
   ACTIONS,
   findCollision,
@@ -15,96 +24,433 @@ import {
   resolveKeybindings,
   type ActionId,
 } from '../lib/keybindings'
-import { ColorField } from './ColorField'
 import {
-  IDENTITIES,
-  INTENSITY_DEFAULT,
-  INTENSITY_MAX,
-  INTENSITY_MIN,
+  DEFAULT_PANEL,
   useStore,
   type Density,
   type GhostSource,
+  type PanelSettings,
   type Profile,
   type SettingsTab,
 } from '../state/store'
 import type { RendererId } from '../term/renderers'
-import { Toggle } from './Toggle'
+import {
+  Badge,
+  Button,
+  Dialog,
+  Field,
+  Icon,
+  Select,
+  SideNav,
+  Stepper,
+  Switch,
+  type SideNavSection,
+} from './grid'
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: 'profiles', label: 'PROFILES' },
-  { id: 'appearance', label: 'APPEARANCE' },
-  { id: 'behavior', label: 'BEHAVIOR' },
-  { id: 'keybindings', label: 'KEYBINDINGS' },
+const NAV: readonly SideNavSection<SettingsTab>[] = [
+  {
+    label: 'SESSION',
+    items: [
+      { id: 'profiles', label: 'PROFILES' },
+      { id: 'shell', label: 'SHELL' },
+    ],
+  },
+  {
+    label: 'DISPLAY',
+    items: [
+      { id: 'panels', label: 'PANELS' },
+      { id: 'type', label: 'TYPE' },
+      { id: 'renderers', label: 'RENDERERS' },
+    ],
+  },
+  {
+    label: 'INPUT',
+    items: [{ id: 'keybindings', label: 'KEYBINDINGS' }],
+  },
 ]
 
 export function Settings() {
-  const open = useStore((s) => s.settings.open)
+  const isOpen = useStore((s) => s.settings.open)
   const tab = useStore((s) => s.settings.tab)
   const setSettingsTab = useStore((s) => s.setSettingsTab)
   const closeSettings = useStore((s) => s.closeSettings)
   const host = useStore((s) => s.host)
+  const profileCount = useStore((s) => s.profiles.length)
+  const rendererCount = useStore((s) => Object.keys(s.settingsValues.renderers).length)
+  const updateSettings = useStore((s) => s.updateSettings)
 
-  if (!open) return null
+  // Counts are live rather than decorative: the nav says how many profiles and
+  // renderers exist without making you open the pane to find out.
+  const sections = NAV.map((section) => ({
+    ...section,
+    items: section.items.map((item) =>
+      item.id === 'profiles'
+        ? { ...item, count: profileCount }
+        : item.id === 'renderers'
+          ? { ...item, count: rendererCount }
+          : item.id === 'keybindings'
+            ? { ...item, count: ACTIONS.length }
+            : item,
+    ),
+  }))
 
   return (
-    <div className="overlay overlay--settings" onMouseDown={closeSettings}>
-      <div
-        className="settings"
-        onMouseDown={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label="Settings"
-      >
-        <span className="bracket bracket--tl" />
-        <span className="bracket bracket--br" />
-
-        <header className="settings__head">
-          <span className="settings__title">SETTINGS</span>
-          <span className="settings__path">
-            TRMNL {host?.version ?? ''} · {host?.configPath ?? ''}
-          </span>
-          <span className="rule" />
-          <button
-            className="settings__close is-btn"
-            onClick={closeSettings}
-            type="button"
-            aria-label="Close settings"
+    <Dialog
+      open={isOpen}
+      onClose={closeSettings}
+      title="SETTINGS .PANELS"
+      width={1000}
+      flush
+      className="settings"
+      bodyClassName="settings__body"
+      headerMeta={
+        <span className="settings__version">{host?.version ?? ''} · UP TO DATE</span>
+      }
+      footer={
+        <>
+          {/* REVERT restores the shipped defaults for the pane's own geometry.
+              There is nothing to APPLY — every change above already landed. */}
+          <Button
+            variant="secondary"
+            onClick={() => updateSettings({ panel: DEFAULT_PANEL })}
           >
-            ✕
-          </button>
-        </header>
+            REVERT
+          </Button>
+          <Button variant="primary" onClick={closeSettings}>
+            APPLY
+          </Button>
+        </>
+      }
+    >
+      <SideNav sections={sections} active={tab} onSelect={setSettingsTab} />
 
-        <div className="settings__body">
-          <nav className="settings__nav" aria-label="Settings sections">
-            {TABS.map((t) => (
-              <button
-                className="settings__navrow"
-                data-active={tab === t.id}
-                key={t.id}
-                onClick={() => setSettingsTab(t.id)}
-                type="button"
-              >
-                {t.label}
-              </button>
-            ))}
-          </nav>
-
-          {tab === 'profiles' && <ProfilesPane />}
-          {tab === 'appearance' && <AppearancePane />}
-          {tab === 'behavior' && <BehaviorPane />}
-          {tab === 'keybindings' && <KeybindingsPane />}
-        </div>
-
-        <footer className="settings__foot">
-          <span className="settings__saved">● SAVED TO {host?.configPath ?? ''}</span>
-          <span className="rule" />
-          <span className="settings__esc">ESC CLOSE</span>
-        </footer>
+      <div className="settings__pane">
+        {tab === 'profiles' && <ProfilesPane />}
+        {tab === 'shell' && <ShellPane />}
+        {tab === 'panels' && <PanelsPane />}
+        {tab === 'type' && <TypePane />}
+        {tab === 'renderers' && <RenderersPane />}
+        {tab === 'keybindings' && <KeybindingsPane />}
       </div>
+    </Dialog>
+  )
+}
+
+/* --- shared --------------------------------------------------------------- */
+
+/** A section label with a dotted leader running to the pane's right edge. */
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="settings__section">
+      <div className="settings__sechead">
+        <span className="settings__seclabel">{label}</span>
+        <span className="leader" />
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/**
+ * One preference row: a sentence-case title over a lowercase mono sub-label,
+ * with its control right-aligned.
+ *
+ * The casing split is the content rule made structural — the title is the app
+ * talking about itself in sentence case under a capped section header, and the
+ * sub-label explains in one lowercase clause directly under the control it
+ * modifies.
+ */
+function PrefRow({
+  title,
+  sub,
+  children,
+}: {
+  title: string
+  sub?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="prefrow">
+      <span className="prefrow__stack">
+        <span className="prefrow__title">{title}</span>
+        {sub && <span className="prefrow__sub">{sub}</span>}
+      </span>
+      {children}
     </div>
   )
 }
 
-/* --- Profiles -------------------------------------------------------------- */
+/* --- Panels ---------------------------------------------------------------
+ * The pane that documents its own frame.
+ */
+
+function PanelsPane() {
+  const panel = useStore((s) => s.settingsValues.panel)
+  const updateSettings = useStore((s) => s.updateSettings)
+
+  const patch = (changes: Partial<PanelSettings>) =>
+    updateSettings({ panel: { ...panel, ...changes } })
+
+  return (
+    <>
+      <Section label="PANEL FRAME">
+        <div className="settings__grid">
+          <Field label="BORDER WIDTH" hint="applied set ships 2px; grid default is 1px">
+            <Select
+              value={String(panel.borderWidth)}
+              options={[
+                { value: '1', label: '1px — hairline' },
+                { value: '2', label: '2px — applied' },
+                { value: '3', label: '3px' },
+              ]}
+              onChange={(value) => patch({ borderWidth: Number(value) })}
+              ariaLabel="Panel border width"
+            />
+          </Field>
+
+          <Field label="CORNER STYLE" hint="round is this project's real default, not an error">
+            <Select
+              value={panel.cornerStyle}
+              options={[
+                { value: 'round', label: 'ROUND — 8px' },
+                { value: 'sharp', label: 'SHARP — 0px' },
+              ]}
+              onChange={(value) => patch({ cornerStyle: value as PanelSettings['cornerStyle'] })}
+              ariaLabel="Corner style"
+            />
+          </Field>
+
+          <Field label="FRAME GAP" hint="void between the two lines of a double frame">
+            <Stepper
+              value={panel.frameGap}
+              min={0}
+              max={12}
+              onChange={(frameGap) => patch({ frameGap })}
+              unit="px"
+              ariaLabel="Frame gap"
+            />
+          </Field>
+
+          <Field label="HEADING SIZE" hint="12px is the floor; nothing goes below it">
+            <Stepper
+              value={panel.headingSize}
+              min={12}
+              max={20}
+              onChange={(headingSize) => patch({ headingSize })}
+              unit="px"
+              ariaLabel="Heading size"
+            />
+          </Field>
+        </div>
+      </Section>
+
+      <Section label="PER-BLOCK TOGGLES">
+        <div className="settings__rows">
+          <PrefRow title="Panel border" sub="every block draws its own outline">
+            <Switch
+              checked={panel.panelBorder}
+              onChange={(panelBorder) => patch({ panelBorder })}
+              label="Panel border"
+            />
+          </PrefRow>
+
+          <PrefRow title="Header border" sub="off runs the content border full height">
+            <Switch
+              checked={panel.headerBorder}
+              onChange={(headerBorder) => patch({ headerBorder })}
+              label="Header border"
+            />
+          </PrefRow>
+
+          <PrefRow title="Header fill" sub="fills the header of the block you are reading">
+            <Switch
+              checked={panel.headerFilled}
+              onChange={(headerFilled) => patch({ headerFilled })}
+              label="Header fill"
+            />
+          </PrefRow>
+
+          <PrefRow title="Content border" sub="wells the output inside its own box">
+            <Switch
+              checked={panel.contentBorder}
+              onChange={(contentBorder) => patch({ contentBorder })}
+              label="Content border"
+            />
+          </PrefRow>
+        </div>
+      </Section>
+    </>
+  )
+}
+
+/* --- Type ----------------------------------------------------------------- */
+
+const DENSITIES: readonly { value: Density; label: string }[] = [
+  { value: 'compact', label: 'COMPACT — 1.42' },
+  { value: 'normal', label: 'NORMAL — 1.65' },
+  { value: 'roomy', label: 'ROOMY — 1.9' },
+]
+
+function TypePane() {
+  const settings = useStore((s) => s.settingsValues)
+  const updateSettings = useStore((s) => s.updateSettings)
+
+  return (
+    <>
+      <Section label="OUTPUT">
+        <div className="settings__grid">
+          <Field label="LINE HEIGHT" hint="terminal output only; chrome does not move">
+            <Select
+              value={settings.density}
+              options={DENSITIES.map((d) => ({ value: d.value, label: d.label }))}
+              onChange={(value) => updateSettings({ density: value as Density })}
+              ariaLabel="Line height"
+            />
+          </Field>
+
+          <Field label="FOLD THRESHOLD" hint="lines before a settled block collapses">
+            <Stepper
+              value={settings.foldThreshold}
+              min={3}
+              max={60}
+              step={3}
+              onChange={(foldThreshold) => updateSettings({ foldThreshold })}
+              ariaLabel="Fold threshold"
+            />
+          </Field>
+        </div>
+      </Section>
+
+      <Section label="FAMILIES">
+        {/* Not editable, and shown anyway: the split between the two families is
+            the system's central rule, so naming it here is documentation rather
+            than a control that was left out. */}
+        <div className="settings__rows">
+          <PrefRow title="Rajdhani" sub="anything a person wrote — headings, labels, buttons">
+            <span className="settings__specimen settings__specimen--display">PANEL .LABEL</span>
+          </PrefRow>
+          <PrefRow title="Space Mono" sub="anything a system emitted — commands, output, paths">
+            <span className="settings__specimen settings__specimen--mono">npm run build</span>
+          </PrefRow>
+        </div>
+      </Section>
+    </>
+  )
+}
+
+/* --- Renderers ------------------------------------------------------------ */
+
+const RENDERER_ROWS: readonly { id: RendererId; label: string; sub: string }[] = [
+  { id: 'build', label: 'Build output', sub: 'route table with first-load budget' },
+  { id: 'git', label: 'Git status', sub: 'staged and untracked groups' },
+  { id: 'serve', label: 'Dev servers', sub: 'local and network link card' },
+  { id: 'err', label: 'Errors', sub: 'alert with did-you-mean' },
+  { id: 'list', label: 'Directory listings', sub: 'sortable table with markers' },
+  { id: 'test', label: 'Test runs', sub: 'pass/fail summary and failures' },
+]
+
+const GHOST_SOURCES: readonly { value: GhostSource; label: string }[] = [
+  { value: 'history', label: 'HISTORY' },
+  { value: 'scripts', label: 'HISTORY + SCRIPTS' },
+  { value: 'off', label: 'OFF' },
+]
+
+function RenderersPane() {
+  const settings = useStore((s) => s.settingsValues)
+  const updateSettings = useStore((s) => s.updateSettings)
+
+  return (
+    <>
+      <Section label="OUTPUT RENDERERS">
+        <div className="settings__rows">
+          {RENDERER_ROWS.map((row) => (
+            <PrefRow key={row.id} title={row.label} sub={row.sub}>
+              <Switch
+                checked={settings.renderers[row.id]}
+                onChange={(on) => updateSettings({ renderers: { [row.id]: on } })}
+                label={row.label}
+              />
+            </PrefRow>
+          ))}
+        </div>
+      </Section>
+
+      <Section label="GHOST SUGGESTIONS">
+        <div className="settings__grid">
+          <Field label="SOURCE" hint="what the tab-acceptable suggestion is drawn from">
+            <Select
+              value={settings.ghostSource}
+              options={GHOST_SOURCES.map((g) => ({ value: g.value, label: g.label }))}
+              onChange={(value) => updateSettings({ ghostSource: value as GhostSource })}
+              ariaLabel="Ghost source"
+            />
+          </Field>
+        </div>
+      </Section>
+    </>
+  )
+}
+
+/* --- Shell ---------------------------------------------------------------- */
+
+function ShellPane() {
+  const settings = useStore((s) => s.settingsValues)
+  const updateSettings = useStore((s) => s.updateSettings)
+  const host = useStore((s) => s.host)
+
+  return (
+    <>
+      <Section label="STARTUP">
+        <div className="settings__rows">
+          <PrefRow title="Restore sessions on launch" sub="reopens panes, cwd and scrollback">
+            <Switch
+              checked={settings.restoreOnLaunch}
+              onChange={(restoreOnLaunch) => updateSettings({ restoreOnLaunch })}
+              label="Restore sessions on launch"
+            />
+          </PrefRow>
+        </div>
+      </Section>
+
+      <Section label="SCROLLBACK">
+        <div className="settings__grid">
+          <Field label="BUFFER CAP" hint="lines kept per session before the oldest are dropped">
+            <Select
+              value={String(settings.scrollbackCap)}
+              options={[
+                { value: '1000', label: '1,000 LINES' },
+                { value: '10000', label: '10,000 LINES' },
+                { value: '50000', label: '50,000 LINES' },
+              ]}
+              onChange={(value) => updateSettings({ scrollbackCap: Number(value) })}
+              ariaLabel="Scrollback cap"
+            />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Machine facts about this install, in mono because that is what they
+          are. Read-only: the config path is where the answers live, not a
+          setting of its own. */}
+      <Section label="HOST">
+        <div className="settings__facts">
+          <span className="settings__factkey">SHELL</span>
+          <span className="settings__factval">{host?.shell ?? '—'}</span>
+          <span className="settings__factkey">CONFIG</span>
+          <span className="settings__factval">{host?.configPath ?? '—'}</span>
+          <span className="settings__factkey">INTEGRATION</span>
+          <span className="settings__factval">{host?.integrationDir ?? '—'}</span>
+          <span className="settings__factkey">SYSTEM</span>
+          <span className="settings__factval">
+            {host ? `darwin ${host.osVersion} ${host.arch}` : '—'}
+          </span>
+        </div>
+      </Section>
+    </>
+  )
+}
+
+/* --- Profiles ------------------------------------------------------------- */
 
 /** The name a profile is born with, and the signal that it is still untouched. */
 export const DEFAULT_PROFILE_NAME = 'new profile'
@@ -152,8 +498,7 @@ async function browseForCwd(
   apply: (patch: Partial<Profile>) => void,
 ): Promise<void> {
   const home = useStore.getState().host?.home ?? ''
-  const expand = (p: string) =>
-    home && p.startsWith('~') ? `${home}${p.slice(1)}` : p
+  const expand = (p: string) => (home && p.startsWith('~') ? `${home}${p.slice(1)}` : p)
 
   try {
     const picked = await open({
@@ -174,7 +519,7 @@ async function browseForCwd(
   } catch (err) {
     // A denied capability or a panel that cannot open is worth a line, but not
     // worth interrupting the settings pane over.
-    console.error('trmnl: could not open the folder panel', err)
+    console.error('crggr: could not open the folder panel', err)
   }
 }
 
@@ -211,193 +556,191 @@ function ProfilesPane() {
   }
 
   return (
-    <div className="settings__pane settings__pane--profiles">
+    <div className="profiles">
       <div className="profiles__list">
-        <div className="profiles__listhead micro">SESSION PROFILES</div>
+        <div className="settings__sechead">
+          <span className="settings__seclabel">SESSION PROFILES</span>
+          <span className="leader" />
+        </div>
+
         <div className="profiles__rows">
           {profiles.map((profile) => (
             <button
               className="profiles__row"
-              data-active={profile.id === selected?.id}
+              data-active={profile.id === selected?.id || undefined}
               key={profile.id}
               onClick={() => selectProfile(profile.id)}
               type="button"
             >
-              {/* The dot carries the profile's own colour when it has one, so
-                  the list reads as the set of clients at a glance. Remote still
-                  overrides it — that a profile is not local matters more than
-                  which client it belongs to. */}
+              {/* Cyan for remote, amber for the selected local profile. The dot
+                  is a signal about the connection, not a per-client colour —
+                  profiles no longer carry one. */}
               <span
                 className="dot"
                 style={{
                   color:
                     profile.connectVia !== 'local'
-                      ? 'var(--warn)'
-                      : profile.accent && isValidColor(profile.accent)
-                        ? profile.accent
-                        : 'var(--ac)',
+                      ? 'var(--signal-cyan)'
+                      : profile.id === selected?.id
+                        ? 'var(--signal-amber)'
+                        : 'var(--line-200)',
                 }}
               />
               <span className="profiles__meta">
                 <span className="profiles__name">{profile.name}</span>
                 <span className="profiles__dir">{profile.cwd}</span>
               </span>
-              {profile.isDefault && <span className="profiles__badge">DEFAULT</span>}
+              {profile.isDefault && <Badge tone="accent">DEFAULT</Badge>}
               {profile.connectVia !== 'local' && !profile.isDefault && (
-                <span className="profiles__badge">REMOTE</span>
+                <Badge tone="live">REMOTE</Badge>
               )}
             </button>
           ))}
         </div>
-        <button className="dashed" onClick={addProfile} type="button">
-          + NEW PROFILE
-        </button>
+
+        <Button variant="secondary" size="sm" onClick={addProfile} className="profiles__add">
+          <Icon name="plus" size={12} />
+          NEW PROFILE
+        </Button>
       </div>
 
       {selected && (
         <div className="profiles__detail">
-          <div className="form">
-            <label className="form__label micro" htmlFor="p-name">NAME</label>
-            <input
-              className="form__input"
-              id="p-name"
-              value={selected.name}
-              onChange={(e) => patch({ name: e.target.value })}
-            />
-
-            <label className="form__label micro">COLOR</label>
-            <ProfileAccentField profile={selected} patch={patch} />
-
-            <label className="form__label micro" htmlFor="p-cwd">WORKING DIR</label>
-            {/* The field stays editable rather than becoming a read-only target
-                for the picker: typing is still the fastest way in when the path
-                is known, and `~` cannot be reached through a folder panel at
-                all. Browse is for the case the panel is better at — finding a
-                directory you would otherwise have to remember the path to. */}
-            <div className="form__row">
+          <div className="settings__grid">
+            <Field label="NAME">
               <input
-                className="form__input"
-                id="p-cwd"
+                className="ginput"
+                value={selected.name}
+                onChange={(e) => patch({ name: e.target.value })}
+                aria-label="Profile name"
+              />
+            </Field>
+
+            <Field label="SHELL" hint="absolute path to the shell binary">
+              <input
+                className="ginput"
+                value={selected.shell}
+                onChange={(e) => patch({ shell: e.target.value })}
+                list="shells"
+                aria-label="Shell"
+              />
+              <datalist id="shells">
+                <option value="/bin/zsh" />
+                <option value="/bin/bash" />
+                <option value="/opt/homebrew/bin/fish" />
+              </datalist>
+            </Field>
+          </div>
+
+          {/* The field stays editable rather than becoming a read-only target
+              for the picker: typing is still the fastest way in when the path is
+              known, and `~` cannot be reached through a folder panel at all.
+              Browse is for the case the panel is better at. */}
+          <Field label="WORKING DIR">
+            <div className="profiles__browse">
+              <input
+                className="ginput"
                 value={selected.cwd}
                 onChange={(e) => patch({ cwd: e.target.value })}
+                aria-label="Working directory"
               />
-              <button
-                className="btn is-btn"
-                type="button"
-                onClick={() => void browseForCwd(selected, patch)}
+              <Button variant="secondary" onClick={() => void browseForCwd(selected, patch)}>
+                BROWSE
+              </Button>
+            </div>
+          </Field>
+
+          <div className="settings__grid">
+            <Field label="CONNECT VIA" hint="local, or user@host for ssh">
+              <input
+                className="ginput"
+                value={selected.connectVia}
+                onChange={(e) => patch({ connectVia: e.target.value })}
+                placeholder="local"
+                aria-label="Connect via"
+              />
+            </Field>
+
+            <Field label="STARTUP CMD" hint="runs once when the session opens">
+              <input
+                className="ginput"
+                value={selected.startupCmd}
+                onChange={(e) => patch({ startupCmd: e.target.value })}
+                aria-label="Startup command"
+              />
+            </Field>
+          </div>
+
+          <Section label="ENVIRONMENT">
+            <div className="env">
+              {selected.env.map((entry, i) => (
+                <div className="env__row" key={i}>
+                  <input
+                    className="ginput"
+                    value={entry.key}
+                    onChange={(e) => {
+                      const env = [...selected.env]
+                      env[i] = { ...entry, key: e.target.value }
+                      patch({ env })
+                    }}
+                    aria-label="Variable name"
+                  />
+                  <input
+                    className="ginput"
+                    value={entry.value}
+                    onChange={(e) => {
+                      const env = [...selected.env]
+                      env[i] = { ...entry, value: e.target.value }
+                      patch({ env })
+                    }}
+                    aria-label="Variable value"
+                  />
+                  <button
+                    className="env__del"
+                    onClick={() => patch({ env: selected.env.filter((_, j) => j !== i) })}
+                    type="button"
+                    aria-label="Remove variable"
+                  >
+                    <Icon name="x" size={12} />
+                  </button>
+                </div>
+              ))}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => patch({ env: [...selected.env, { key: '', value: '' }] })}
               >
-                BROWSE…
-              </button>
+                <Icon name="plus" size={12} />
+                ADD VARIABLE
+              </Button>
             </div>
 
-            <label className="form__label micro" htmlFor="p-shell">SHELL</label>
-            <input
-              className="form__input"
-              id="p-shell"
-              value={selected.shell}
-              onChange={(e) => patch({ shell: e.target.value })}
-              list="shells"
-            />
-            <datalist id="shells">
-              <option value="/bin/zsh" />
-              <option value="/bin/bash" />
-              <option value="/opt/homebrew/bin/fish" />
-            </datalist>
-
-            <label className="form__label micro" htmlFor="p-connect">CONNECT VIA</label>
-            <input
-              className="form__input"
-              id="p-connect"
-              value={selected.connectVia}
-              onChange={(e) => patch({ connectVia: e.target.value })}
-              placeholder="local or user@host"
-            />
-
-            <label className="form__label micro" htmlFor="p-startup">STARTUP CMD</label>
-            <input
-              className="form__input form__input--accent"
-              id="p-startup"
-              value={selected.startupCmd}
-              onChange={(e) => patch({ startupCmd: e.target.value })}
-              placeholder="runs once on open"
-            />
-          </div>
-
-          <div className="section-head">
-            <span className="micro">ENVIRONMENT</span>
-          </div>
-          <div className="env">
-            {selected.env.map((entry, i) => (
-              <div className="env__row" key={i}>
-                <input
-                  className="env__key"
-                  value={entry.key}
-                  onChange={(e) => {
-                    const env = [...selected.env]
-                    env[i] = { ...entry, key: e.target.value }
-                    patch({ env })
-                  }}
-                  aria-label="Variable name"
-                />
-                <input
-                  className="env__value"
-                  value={entry.value}
-                  onChange={(e) => {
-                    const env = [...selected.env]
-                    env[i] = { ...entry, value: e.target.value }
-                    patch({ env })
-                  }}
-                  aria-label="Variable value"
-                />
-                <button
-                  className="env__del is-btn is-btn--danger"
-                  onClick={() => patch({ env: selected.env.filter((_, j) => j !== i) })}
-                  type="button"
-                  aria-label="Remove variable"
-                >
-                  ✕
-                </button>
+            {/* Secrets must not be persisted in plaintext. The handoff flags
+                this for security review; until Keychain routing exists we warn
+                rather than silently writing a credential to disk. */}
+            {selected.env.some((e) => looksSecret(e.key)) && (
+              <div className="env__warn">
+                values that look like credentials are stored in plaintext — use the keychain
+                instead
               </div>
-            ))}
-            <button
-              className="dashed dashed--inline"
-              onClick={() => patch({ env: [...selected.env, { key: '', value: '' }] })}
-              type="button"
-            >
-              + ADD VARIABLE
-            </button>
-          </div>
-
-          {/* Secrets must not be persisted in plaintext. The handoff flags this
-              for security review; until Keychain routing exists we warn rather
-              than silently writing a credential to disk. */}
-          {selected.env.some((e) => looksSecret(e.key)) && (
-            <div className="warnrow">
-              ⚠ VALUES THAT LOOK LIKE CREDENTIALS ARE STORED IN PLAINTEXT — USE KEYCHAIN INSTEAD
-            </div>
-          )}
+            )}
+          </Section>
 
           <div className="profiles__actions">
-            <button
-              className="btn btn--primary is-btn"
+            <Button
+              variant="primary"
               onClick={() => {
                 closeSettings()
                 void newSession(selected.id)
               }}
-              type="button"
             >
-              LAUNCH SESSION →
-            </button>
-            <button
-              className="btn is-btn"
-              data-lit={selected.isDefault}
-              onClick={() => setDefaultProfile(selected.id)}
-              type="button"
-            >
-              {selected.isDefault ? '◆ DEFAULT PROFILE' : 'SET AS DEFAULT'}
-            </button>
-            <button
-              className="btn is-btn"
+              LAUNCH SESSION
+            </Button>
+            <Button variant="secondary" onClick={() => setDefaultProfile(selected.id)}>
+              {selected.isDefault ? 'DEFAULT PROFILE' : 'SET AS DEFAULT'}
+            </Button>
+            <Button
+              variant="secondary"
               onClick={() =>
                 upsertProfile({
                   ...selected,
@@ -406,18 +749,13 @@ function ProfilesPane() {
                   isDefault: false,
                 })
               }
-              type="button"
             >
               DUPLICATE
-            </button>
-            <span className="rule" />
-            <button
-              className="btn is-btn is-btn--danger"
-              onClick={() => deleteProfile(selected.id)}
-              type="button"
-            >
+            </Button>
+            <span className="leader" />
+            <Button variant="signal" tone="danger" onClick={() => deleteProfile(selected.id)}>
               DELETE
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -429,456 +767,11 @@ function looksSecret(key: string): boolean {
   return /token|secret|password|passwd|api[_-]?key|credential|private[_-]?key/i.test(key)
 }
 
-/**
- * Per-profile accent: inherit, one of the identities, or anything CSS parses.
- *
- * Inherit is a first-class choice rather than the absence of one, because the
- * two behave differently over time — a profile set to USER stays that colour
- * when the global identity changes, while an inheriting profile follows it. The
- * row makes that difference selectable instead of leaving it to whether a field
- * happens to be empty.
- */
-function ProfileAccentField({
-  profile,
-  patch,
-}: {
-  profile: Profile
-  patch: (changes: Partial<Profile>) => void
-}) {
-  const inherits = !profile.accent
-  // A custom colour is anything that is not one of the shipped identities; only
-  // then is the text field worth showing, so the common case stays one click.
-  const named = IDENTITIES.find((i) => i.value === profile.accent)
-  const valid = inherits || isValidColor(profile.accent!)
-
-  return (
-    <div className="paccent">
-      <div className="paccent__picks">
-        <button
-          className="paccent__pick"
-          data-selected={inherits}
-          onClick={() => patch({ accent: undefined })}
-          type="button"
-          aria-pressed={inherits}
-          title="Follow the global identity"
-        >
-          INHERIT
-        </button>
-
-        {IDENTITIES.map((identity) => {
-          const selected = profile.accent === identity.value
-          return (
-            <button
-              className="paccent__pick"
-              data-selected={selected}
-              key={identity.name}
-              onClick={() => patch({ accent: identity.value })}
-              type="button"
-              aria-pressed={selected}
-              title={identity.name}
-            >
-              <span className="paccent__chip" style={{ background: identity.value }} />
-              {identity.name}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Shown once the colour is not an identity, so a hand-picked value stays
-          editable rather than being unreachable through the swatches. */}
-      {!inherits && !named && (
-        <ColorField
-          value={profile.accent ?? ''}
-          onChange={(accent) => patch({ accent })}
-          label="Custom profile colour"
-        />
-      )}
-
-      {/* Nudges an identity value off the swatch it matches, so the field opens
-          on the colour already showing rather than resetting to an unrelated
-          one. Without the nudge the value stays equal to an identity, `named`
-          stays true, and the field never appears at all. */}
-      <button
-        className="paccent__custombtn"
-        onClick={() => patch({ accent: nudgeOffIdentity(profile.accent) })}
-        type="button"
-        data-selected={!inherits && !named}
-      >
-        CUSTOM…
-      </button>
-
-      {!valid && (
-        <div className="warnrow">
-          ⚠ UNREADABLE COLOUR — THIS PROFILE WILL USE THE GLOBAL IDENTITY UNTIL CORRECTED
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** Where CUSTOM… starts from when there is nothing to carry over: a mid-band
- *  colour that is already valid, so the field never opens in an error state the
- *  user did not cause. */
-const DEFAULT_CUSTOM_ACCENT = 'oklch(0.75 0.18 300)'
-
-/**
- * A colour that is guaranteed not to equal one of the identity swatches.
- *
- * Switching to CUSTOM should keep the colour on screen rather than jumping, but
- * a value identical to an identity reads as *that identity being selected* —
- * which is what hides the custom field. Rounding through hex both preserves the
- * colour visually and moves the stored string off the exact identity token.
- */
-function nudgeOffIdentity(accent: string | undefined): string {
-  if (!accent) return DEFAULT_CUSTOM_ACCENT
-  const hex = anyColorToHex(accent)
-  const back = hex ? hexToOklch(hex) : null
-  if (!back) return DEFAULT_CUSTOM_ACCENT
-  const rendered = formatOklch(back)
-  return IDENTITIES.some((i) => i.value === rendered) ? DEFAULT_CUSTOM_ACCENT : rendered
-}
-
-/* --- Appearance ------------------------------------------------------------ */
-
-const DENSITIES: Density[] = ['compact', 'normal', 'roomy']
-
-function AppearancePane() {
-  const settings = useStore((s) => s.settingsValues)
-  const updateSettings = useStore((s) => s.updateSettings)
-
-  return (
-    <div className="settings__pane">
-      <Section label="IDENTITY">
-        <div
-          className="swatches swatches--large"
-          style={{ '--swatch-cols': IDENTITIES.length } as React.CSSProperties}
-        >
-          {IDENTITIES.map((identity) => {
-            const selected = identity.name === settings.identityName
-            return (
-              <button
-                className="swatch swatch--large"
-                data-selected={selected}
-                key={identity.name}
-                onClick={() =>
-                  updateSettings({ accent: identity.value, identityName: identity.name })
-                }
-                type="button"
-                aria-pressed={selected}
-              >
-                <span
-                  className="swatch__chip"
-                  style={{
-                    background: identity.value,
-                    outlineColor: selected ? identity.value : 'transparent',
-                    boxShadow: selected ? `0 0 18px -2px ${identity.value}` : 'none',
-                  }}
-                />
-                <span className="swatch__name">{identity.name}</span>
-                <span className="swatch__value">{shortOklch(identity.value)}</span>
-              </button>
-            )
-          })}
-        </div>
-      </Section>
-
-      <Section label="INTENSITY">
-        <IntensitySlider intensity={settings.intensity} onChange={(intensity) => updateSettings({ intensity })} />
-      </Section>
-
-      <Section label="DENSITY">
-        <div className="segmented segmented--auto">
-          {DENSITIES.map((density) => (
-            <button
-              className="segmented__seg"
-              data-active={settings.density === density}
-              key={density}
-              onClick={() => updateSettings({ density })}
-              type="button"
-            >
-              {density.toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </Section>
-
-      <CommandColorsSection />
-
-      <div className="typeout">
-        <div className="typeout__row">
-          <span className="micro">TERMINAL FONT</span>
-          <span className="typeout__val">Geist Mono 12 / {lineHeight(settings.density)}</span>
-        </div>
-        <div className="typeout__row">
-          <span className="micro">UI FONT</span>
-          <span className="typeout__val">Rajdhani</span>
-          <span className="typeout__sep">·</span>
-          <span className="micro">DISPLAY</span>
-          <span className="typeout__val">Orbitron</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function shortOklch(value: string): string {
-  return value.replace(/0\./g, '.')
-}
-
-/**
- * Duller/brighter, as an oklch chroma multiplier on top of whatever accent is
- * active — identity, profile, or a running command's. Chroma rather than
- * lightness: USER is already l:0.93 with barely any saturation, so a
- * lightness-only slider has nowhere left to push it and "USER looks dim"
- * would stay unfixable. See `withIntensity`.
- *
- * A native range input rather than a custom drag surface: this is a plain
- * linear scrubber, and the browser's own gives keyboard and scroll-wheel
- * support for free.
- *
- * DULLER/BRIGHTER labels rather than a numeric readout: the stored value is a
- * multiplier that means nothing on its own, and the swatches above already
- * show the colour this is adjusting.
- */
-function IntensitySlider({
-  intensity,
-  onChange,
-}: {
-  intensity: number
-  onChange: (intensity: number) => void
-}) {
-  const atDefault = intensity === INTENSITY_DEFAULT
-
-  return (
-    <div className="intensity">
-      <div className="intensity__row">
-        <span className="micro intensity__end">DULLER</span>
-        <input
-          className="intensity__range"
-          type="range"
-          min={INTENSITY_MIN}
-          max={INTENSITY_MAX}
-          step={0.02}
-          value={intensity}
-          onChange={(e) => onChange(Number(e.target.value))}
-          aria-label="Accent intensity"
-        />
-        <span className="micro intensity__end">BRIGHTER</span>
-      </div>
-      {!atDefault && (
-        <button className="intensity__reset" onClick={() => onChange(INTENSITY_DEFAULT)} type="button">
-          RESET
-        </button>
-      )}
-    </div>
-  )
-}
-
-/** A blank rule starts disabled: an empty `match` matches nothing, and an empty
- *  colour is not a valid `--ac`, so arming it before it is filled in would only
- *  invite a broken theme. */
-const BLANK_ACCENT = (): CommandAccent => ({
-  id: `ca-${Date.now().toString(36)}`,
-  match: '',
-  color: 'oklch(0.75 0.18 152)',
-  label: '',
-  enabled: false,
-})
-
-function CommandColorsSection() {
-  const rules = useStore((s) => s.settingsValues.commandAccents)
-  const updateSettings = useStore((s) => s.updateSettings)
-
-  const patch = (i: number, changes: Partial<CommandAccent>) => {
-    const commandAccents = rules.map((rule, j) => (j === i ? { ...rule, ...changes } : rule))
-    updateSettings({ commandAccents })
-  }
-
-  return (
-    <Section label="COMMAND COLORS">
-      {/* First match wins (see lib/commandAccent.ts), so the list order is
-          meaningful and rows are rendered in stored order rather than sorted. */}
-      <div className="ccolors__note micro">FIRST MATCHING RULE WINS WHILE THE COMMAND RUNS</div>
-
-      <div className="ccolors">
-        {rules.map((rule, i) => {
-          return (
-            <div className="ccolors__row" key={rule.id}>
-              <input
-                className="ccolors__match"
-                value={rule.match}
-                onChange={(e) => patch(i, { match: e.target.value })}
-                placeholder="command"
-                aria-label="Command word to match"
-                spellCheck={false}
-              />
-              <input
-                className="ccolors__label"
-                value={rule.label}
-                onChange={(e) => patch(i, { label: e.target.value })}
-                placeholder="label"
-                aria-label="Rule label"
-              />
-              {/* The swatch doubles as the picker, so the row keeps its width
-                  while losing the oklch box that used to sit beside it. */}
-              <ColorField
-                value={rule.color}
-                onChange={(color) => patch(i, { color })}
-                label={`Colour for ${rule.label || rule.match || 'rule'}`}
-              />
-              <Toggle
-                on={rule.enabled}
-                onChange={(on) => patch(i, { enabled: on })}
-                label={`Enable ${rule.label || rule.match || 'rule'}`}
-              />
-              <button
-                className="ccolors__del is-btn is-btn--danger"
-                onClick={() =>
-                  updateSettings({ commandAccents: rules.filter((_, j) => j !== i) })
-                }
-                type="button"
-                aria-label={`Remove ${rule.label || rule.match || 'rule'}`}
-              >
-                ✕
-              </button>
-            </div>
-          )
-        })}
-
-        <button
-          className="dashed dashed--inline"
-          onClick={() => updateSettings({ commandAccents: [...rules, BLANK_ACCENT()] })}
-          type="button"
-        >
-          + ADD COMMAND COLOR
-        </button>
-      </div>
-
-      {rules.some((r) => r.enabled && !isValidColor(r.color)) && (
-        <div className="warnrow">
-          ⚠ AN ENABLED RULE HAS AN UNREADABLE COLOUR — IT WILL BE SKIPPED UNTIL CORRECTED
-        </div>
-      )}
-    </Section>
-  )
-}
-
-function lineHeight(density: Density): string {
-  return density === 'compact' ? '1.42' : density === 'roomy' ? '1.90' : '1.62'
-}
-
-/* --- Behavior -------------------------------------------------------------- */
-
-const RENDERER_ROWS: { id: RendererId; label: string }[] = [
-  { id: 'build', label: 'Build output → route table' },
-  { id: 'git', label: 'git status → file chips' },
-  { id: 'serve', label: 'Dev servers → link card' },
-  { id: 'err', label: 'Errors → did-you-mean' },
-  { id: 'list', label: 'Directory listings → table' },
-  { id: 'test', label: 'Test runs → pass/fail summary' },
-]
-
-const GHOST_SOURCES: { id: GhostSource; label: string }[] = [
-  { id: 'history', label: 'HISTORY' },
-  { id: 'scripts', label: 'HISTORY + SCRIPTS' },
-  { id: 'off', label: 'OFF' },
-]
-
-function BehaviorPane() {
-  const settings = useStore((s) => s.settingsValues)
-  const updateSettings = useStore((s) => s.updateSettings)
-
-  const stepFold = (delta: number) => {
-    const next = Math.min(60, Math.max(3, settings.foldThreshold + delta * 3))
-    updateSettings({ foldThreshold: next })
-  }
-
-  return (
-    <div className="settings__pane">
-      <Section label="BLOCKS">
-        <div className="prefrow">
-          <span className="prefrow__stack">
-            <span className="prefrow__label">Fold output longer than</span>
-            <span className="prefrow__sub">applies to every block in this window</span>
-          </span>
-          <span className="stepper">
-            <button className="stepper__btn" onClick={() => stepFold(-1)} type="button" aria-label="Fewer lines">
-              −
-            </button>
-            <span className="stepper__val">{settings.foldThreshold}</span>
-            <button className="stepper__btn" onClick={() => stepFold(1)} type="button" aria-label="More lines">
-              +
-            </button>
-          </span>
-          <span className="micro stepper__suffix">LINES</span>
-        </div>
-      </Section>
-
-      <Section label="OUTPUT RENDERERS">
-        <div className="rows">
-          {RENDERER_ROWS.map((row) => (
-            <div className="prefrow prefrow--sep" key={row.id}>
-              <span className="prefrow__label">{row.label}</span>
-              <Toggle
-                on={settings.renderers[row.id]}
-                onChange={(on) => updateSettings({ renderers: { [row.id]: on } })}
-                label={row.label}
-              />
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section label="GHOST SUGGESTIONS">
-        <div className="segmented segmented--auto">
-          {GHOST_SOURCES.map((source) => (
-            <button
-              className="segmented__seg"
-              data-active={settings.ghostSource === source.id}
-              key={source.id}
-              onClick={() => updateSettings({ ghostSource: source.id })}
-              type="button"
-            >
-              {source.label}
-            </button>
-          ))}
-        </div>
-      </Section>
-
-      <Section label="STARTUP">
-        <div className="prefrow">
-          <span className="prefrow__stack">
-            <span className="prefrow__label">Restore sessions on launch</span>
-            <span className="prefrow__sub">reopens panes, cwd and scrollback</span>
-          </span>
-          <Toggle
-            on={settings.restoreOnLaunch}
-            onChange={(on) => updateSettings({ restoreOnLaunch: on })}
-            label="Restore sessions on launch"
-          />
-        </div>
-
-        <div className="prefrow">
-          <span className="prefrow__stack">
-            <span className="prefrow__label">Boot sequence</span>
-            <span className="prefrow__sub">brief initialisation animation on launch</span>
-          </span>
-          <Toggle
-            on={settings.bootSequence}
-            onChange={(on) => updateSettings({ bootSequence: on })}
-            label="Boot sequence"
-          />
-        </div>
-      </Section>
-    </div>
-  )
-}
-
-/* --- Keybindings ----------------------------------------------------------- */
+/* --- Keybindings ---------------------------------------------------------- */
 
 /** Never remappable here: native menu items (see lib/menuEvents.ts), the
  *  Composer's own Tab handling, and ⌃C. Shown for reference, not editable. */
-const FIXED_BINDINGS: [string, string][] = [
+const FIXED_BINDINGS: readonly [string, string][] = [
   ['⌘T', 'New session'],
   ['⌘W', 'Close pane'],
   ['⌘,', 'Settings'],
@@ -934,49 +827,61 @@ function KeybindingsPane() {
   }, [listening, bindings, setKeybinding])
 
   return (
-    <div className="settings__pane">
-      <div className="keys">
-        {ACTIONS.map((action) => (
-          <div className="keys__row" key={action.id}>
-            <span className="keys__chord" data-listening={listening === action.id}>
-              {listening === action.id ? 'PRESS KEYS…' : bindings[action.id]}
-            </span>
-            <span className="keys__action">{action.label}</span>
-            <button
-              className="keys__edit is-btn"
-              onClick={() => {
-                setPendingCollision(null)
-                setListening(listening === action.id ? null : action.id)
-              }}
-              type="button"
-            >
-              {listening === action.id ? 'CANCEL' : 'EDIT'}
-            </button>
-          </div>
-        ))}
+    <>
+      <Section label="COMMANDS">
+        <div className="keys">
+          {ACTIONS.map((action) => (
+            <div className="keys__row" key={action.id}>
+              <span className="keys__chord" data-listening={listening === action.id || undefined}>
+                {listening === action.id ? 'PRESS KEYS…' : bindings[action.id]}
+              </span>
+              <span className="keys__action">{action.label}</span>
+              <span className="leader" />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setPendingCollision(null)
+                  setListening(listening === action.id ? null : action.id)
+                }}
+              >
+                {listening === action.id ? 'CANCEL' : 'EDIT'}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Section>
 
-        {FIXED_BINDINGS.map(([chord, label]) => (
-          <div className="keys__row" key={chord}>
-            <span className="keys__chord">{chord}</span>
-            <span className="keys__action">{label}</span>
-            <span className="keys__edit is-disabled" title="Not remappable">
-              —
-            </span>
-          </div>
-        ))}
-      </div>
+      <Section label="RESERVED">
+        <div className="keys">
+          {FIXED_BINDINGS.map(([chord, label]) => (
+            <div className="keys__row" data-fixed key={chord}>
+              <span className="keys__chord">{chord}</span>
+              <span className="keys__action">{label}</span>
+              <span className="leader" />
+              <span className="keys__fixed" title="Not remappable">
+                —
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="keys__note">⌃c cancels the running command and is not remappable</div>
+      </Section>
 
       {pendingCollision && (
         <div className="keys__collision">
-          <span className="micro" style={{ color: 'var(--warn)' }}>
+          <span className="keys__collisionmsg">
             {pendingCollision.chord} IS ALREADY{' '}
             {pendingCollision.with === 'reserved'
               ? 'RESERVED FOR ⌃C CANCEL'
               : `USED BY ${ACTIONS.find((a) => a.id === pendingCollision.with)?.label.toUpperCase()}`}
           </span>
+          <span className="leader" />
           {pendingCollision.with !== 'reserved' && (
-            <button
-              className="sx__btn is-btn"
+            <Button
+              size="sm"
+              variant="primary"
               onClick={() => {
                 setKeybinding(
                   pendingCollision.action,
@@ -985,36 +890,15 @@ function KeybindingsPane() {
                 )
                 setPendingCollision(null)
               }}
-              type="button"
             >
               REPLACE
-            </button>
+            </Button>
           )}
-          <button
-            className="sx__btn sx__btn--ghost is-btn"
-            onClick={() => setPendingCollision(null)}
-            type="button"
-          >
+          <Button size="sm" variant="secondary" onClick={() => setPendingCollision(null)}>
             CANCEL
-          </button>
+          </Button>
         </div>
       )}
-
-      <div className="keys__note micro">⌃C CANCELS THE RUNNING COMMAND AND IS NOT REMAPPABLE</div>
-    </div>
-  )
-}
-
-/* --- shared ---------------------------------------------------------------- */
-
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <section className="settings__section">
-      <div className="section-head">
-        <span className="micro">{label}</span>
-        <span className="rule" />
-      </div>
-      {children}
-    </section>
+    </>
   )
 }

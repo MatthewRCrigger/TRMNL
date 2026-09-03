@@ -12,13 +12,6 @@ import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import {
-  DEFAULT_COMMAND_ACCENTS,
-  accentFor,
-  isValidColor,
-  type CommandAccent,
-} from '../lib/commandAccent'
-import { withIntensity } from '../lib/color'
-import {
   resolveKeybindings,
   sanitizeKeybindingOverrides,
   type ActionId,
@@ -41,44 +34,6 @@ export type SplitDir = 'row' | 'col'
 export type Density = 'compact' | 'normal' | 'roomy'
 export type GhostSource = 'history' | 'scripts' | 'off'
 
-export interface Identity {
-  name: string
-  value: string
-}
-
-/** Swatch order follows the design; CLU carries the gold formerly named ATHENA. */
-export const IDENTITIES: Identity[] = [
-  { name: 'PROGRAM', value: 'oklch(0.75 0.18 195)' },
-  { name: 'ISO', value: 'oklch(0.75 0.18 152)' },
-  { name: 'USER', value: 'oklch(0.93 0.045 220)' },
-  { name: 'ARES', value: 'oklch(0.6 0.25 25)' },
-  { name: 'CLU', value: 'oklch(0.85 0.18 90)' },
-]
-
-/** The default identity. Must match the `--ac` fallback in tokens.css. */
-export const DEFAULT_IDENTITY =
-  IDENTITIES.find((i) => i.name === 'USER') ?? IDENTITIES[0]!
-
-/**
- * The intensity slider's range, as a chroma multiplier — see `withIntensity`.
- * 1 is unmodified. MIN goes low enough to read as visibly greyed without
- * hitting exactly 0 (a slider that can zero out the accent entirely would
- * make "duller" indistinguishable from "off," which is a different feature).
- *
- * MAX went through two rounds: 1.8 was chosen against `oklchToHex`'s gamut
- * clip, back when "brighter" only scaled chroma — past that, the swatch
- * genuinely stopped changing. But most of the interface is hairlines and
- * washes as faint as 3.5% `color-mix` (`--bd`, `--wash`, …), where chroma
- * barely registers and what those need is more lightness reaching `--ac`'s
- * 0.62 floor. `withIntensity` now raises L too above 1, which has real
- * headroom (clamps at 1.0, not a gamut edge), so 1.8 stopped being enough —
- * bright still meant "USER's own swatch looks a little more saturated," not
- * "the borders around every panel stop blending into the page."
- */
-export const INTENSITY_MIN = 0.4
-export const INTENSITY_MAX = 2.6
-export const INTENSITY_DEFAULT = 1
-
 export interface Profile {
   id: string
   name: string
@@ -88,16 +43,6 @@ export interface Profile {
   startupCmd: string
   env: { key: string; value: string }[]
   isDefault?: boolean
-  /**
-   * Accent for sessions launched from this profile, or undefined to inherit the
-   * global identity.
-   *
-   * This is how one client's sessions stay recognisably one colour: the profile
-   * carries it, so every shell opened from that profile paints the same, and a
-   * profile that never sets one keeps following the global identity — including
-   * when the identity later changes, which a copied-down colour would not.
-   */
-  accent?: string
 }
 
 export interface Session {
@@ -162,28 +107,63 @@ export interface Session {
   exited?: { code: number | null }
 }
 
+/**
+ * The six panel toggles, plus the two frame measurements the applied token set
+ * overrides. Every block in the stream is drawn with these.
+ *
+ * `panelBorder`, `headerBorder`, `contentBorder` and `headerFilled` are the
+ * user-facing four; `showPanel` and `panelColor` are not settings because the
+ * block's own state owns them — a failed command must be able to claim red, and
+ * a scrollback dump must be able to drop its frame, regardless of preference.
+ */
+export interface PanelSettings {
+  /** Panel border width in px. The applied set ships 2, GRID's default is 1. */
+  borderWidth: number
+  /** `round` computes an 8px outer radius; `sharp` is 0. */
+  cornerStyle: 'round' | 'sharp'
+  /** The void gap between the two lines of a double frame, in px. */
+  frameGap: number
+  /** Panel heading size in px. The applied set ships 14, GRID's default is 12. */
+  headingSize: number
+  panelBorder: boolean
+  headerBorder: boolean
+  headerFilled: boolean
+  contentBorder: boolean
+}
+
+/**
+ * The applied token set — `tokens.applied.json`, not `tokens.json`.
+ *
+ * Four rows differ from the GRID defaults and they are the whole visual
+ * character of this build. The round corner in particular is a deliberate
+ * override of DESIGN_GUIDE.md, which calls a rounded card a bug; the live theme
+ * setting overrides that on purpose. Do not "correct" it back to sharp.
+ */
+export const DEFAULT_PANEL: PanelSettings = {
+  borderWidth: 2,
+  cornerStyle: 'round',
+  frameGap: 4,
+  headingSize: 14,
+  panelBorder: true,
+  headerBorder: true,
+  headerFilled: true,
+  contentBorder: true,
+}
+
 export interface Settings {
-  accent: string
-  identityName: string
-  /**
-   * Chroma multiplier applied on top of whichever accent is active —
-   * identity, profile, or a running command's — so "USER looks a bit dim" is
-   * a slider rather than a colour re-pick. See `withIntensity`; range is
-   * `INTENSITY_MIN`..`INTENSITY_MAX`, 1 unmodified, above 1 more vivid. Kept
-   * separate from `accent` itself: the five shipped identities stay their
-   * exact swatch values, and `pickSettings` can keep validating `accent`
-   * against them unchanged.
-   */
-  intensity: number
   density: Density
   foldThreshold: number
   renderers: Record<RendererId, boolean>
   ghostSource: GhostSource
   restoreOnLaunch: boolean
-  bootSequence: boolean
   scrollbackCap: number
-  /** Per-command accent overrides; see lib/commandAccent.ts. */
-  commandAccents: CommandAccent[]
+  /**
+   * The panel toggles from the panel contract, applied to every block in the
+   * stream. They are settings rather than constants because the settings panel
+   * documents its own frame with them — the surface you change them on is
+   * itself a panel drawn by these values.
+   */
+  panel: PanelSettings
   /** User overrides of the JS-handled chords in lib/keybindings.ts. A missing
    *  action falls back to its shipped default — see resolveKeybindings. */
   keybindings: KeybindingOverrides
@@ -279,14 +259,6 @@ interface StoreState {
    * "unbound".
    */
   setKeybinding: (action: ActionId, chord: string, swapWith?: ActionId) => void
-  /** Accent forced by a running command, or null when none is active. */
-  commandAccent: string | null
-  /** Nonce+colour for the identity sweep; null when no sweep is in flight. */
-  identitySweep: { id: number; color: string } | null
-  /** Commit the pending accent to `--ac`. Called at the sweep's midpoint. */
-  applyIdentity: () => void
-  /** Called by the sweep element once its animation has finished or was cut. */
-  endIdentitySweep: (id: number) => void
   upsertProfile: (profile: Profile) => void
   deleteProfile: (id: string) => void
   setDefaultProfile: (id: string) => void
@@ -333,20 +305,22 @@ interface StoreState {
   activeSessionId: (pane?: PaneId) => string | null
 }
 
-export type SettingsTab = 'profiles' | 'appearance' | 'behavior' | 'keybindings'
+export type SettingsTab =
+  | 'profiles'
+  | 'shell'
+  | 'panels'
+  | 'type'
+  | 'renderers'
+  | 'keybindings'
 
 export const DEFAULT_SETTINGS: Settings = {
-  accent: DEFAULT_IDENTITY.value,
-  identityName: DEFAULT_IDENTITY.name,
-  intensity: INTENSITY_DEFAULT,
   density: 'normal',
   foldThreshold: 9,
   renderers: { build: true, git: true, serve: true, err: true, list: true, test: true },
   ghostSource: 'scripts',
   restoreOnLaunch: true,
-  bootSequence: true,
   scrollbackCap: 10_000,
-  commandAccents: DEFAULT_COMMAND_ACCENTS,
+  panel: DEFAULT_PANEL,
   keybindings: {},
 }
 
@@ -421,26 +395,8 @@ function sessionCallbacks(set: StoreSet, id: string): SessionCallbacks {
           void notifyComplete(last, existing.name)
         }
 
-        // A matched command's colour is stamped onto its own block, so the
-        // header keeps it once the global accent reverts. Resolved here
-        // because this is where the rules live; the session layer has no
-        // knowledge of them.
-        // Tree words only describe what is running now, so they inform the
-        // running block and never a settled one — a finished block's colour
-        // must not be decided by whatever happens to be alive later.
-        const stamped = blocks.map((b) => {
-          if (b.accent !== undefined) return b
-          const accent = accentFor(
-            b.cmd,
-            s.settingsValues.commandAccents,
-            b.running ? existing.tools : undefined,
-          )
-          return accent ? { ...b, accent } : b
-        })
-        const sessions = { ...s.sessions, [id]: { ...existing, blocks: stamped } }
-        // A command starting or settling is what drives the accent, so this
-        // recomputes on the same transition the notification uses.
-        return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
+        const sessions = { ...s.sessions, [id]: { ...existing, blocks } }
+        return { sessions }
       })
     },
     onCwd: (newCwd) => {
@@ -486,15 +442,14 @@ function startToolPoll(id: string): void {
     }
 
     const running = session.blocks.find((b) => b.running)
-    if (!running || running.accent !== undefined) {
-      // Nothing to resolve. Clear stale words so a settled session does not keep
-      // claiming a colour from a tree that has since exited.
+    if (!running) {
+      // Clear stale words so a settled session does not keep describing a tree
+      // that has since exited — the window title reads these.
       if (session.tools.length) {
         useStore.setState((s) => {
           const existing = s.sessions[id]
           if (!existing) return s
-          const sessions = { ...s.sessions, [id]: { ...existing, tools: [] } }
-          return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
+          return { sessions: { ...s.sessions, [id]: { ...existing, tools: [] } } }
         })
       }
       return
@@ -514,15 +469,7 @@ function startToolPoll(id: string): void {
             return s
           }
 
-          // Stamp the running block so the colour locks for the rest of the run.
-          const blocks = existing.blocks.map((b) => {
-            if (!b.running || b.accent !== undefined) return b
-            const accent = accentFor(b.cmd, s.settingsValues.commandAccents, tools)
-            return accent ? { ...b, accent } : b
-          })
-
-          const sessions = { ...s.sessions, [id]: { ...existing, blocks, tools } }
-          return { sessions, commandAccent: syncCommandAccent({ ...s, sessions }) }
+          return { sessions: { ...s.sessions, [id]: { ...existing, tools } } }
         })
       })
       .catch(() => {
@@ -608,7 +555,7 @@ async function performCloseSession(
     // Whatever the pane fell back to may belong to a different profile, so the
     // window's colour is resolved against the new selection rather than left
     // showing the closed session's.
-    return { panes, sessions, commandAccent: syncCommandAccent({ ...s, panes, sessions }) }
+    return { panes, sessions }
   })
 
   // A pane with no sessions left has nothing to render; give it a fresh one so
@@ -655,8 +602,6 @@ export const useStore = create<StoreState>((set, get) => ({
   settings: { open: false, tab: 'profiles', selectedProfile: null },
   search: { open: false, query: '', activeIndex: 0 },
   closeConfirm: null,
-  identitySweep: null,
-  commandAccent: null,
 
   panes: { a: { sessions: [], active: 0 }, b: { sessions: [], active: 0 } },
   sessions: {},
@@ -781,7 +726,7 @@ export const useStore = create<StoreState>((set, get) => ({
         }
         // The restored selection is rarely the last session spawned above, so
         // the colour is resolved once the real active index is in place.
-        return { panes, commandAccent: syncCommandAccent({ ...s, panes }) }
+        return { panes }
       })
       return
     }
@@ -789,13 +734,7 @@ export const useStore = create<StoreState>((set, get) => ({
     await get().newSession(profiles.find((p) => p.isDefault)?.id ?? profiles[0]?.id)
   },
 
-  setFocus: (pane) =>
-    // The accent follows focus: switching panes adopts whatever that pane is
-    // running, or reverts to the identity when it is idle.
-    set((st) => {
-      const next = { ...st, focus: pane }
-      return { focus: pane, commandAccent: syncCommandAccent(next) }
-    }),
+  setFocus: (pane) => set({ focus: pane }),
 
   toggleSplit(dir) {
     const { split, splitDir } = get()
@@ -883,46 +822,13 @@ export const useStore = create<StoreState>((set, get) => ({
     if (patch.scrollbackCap) {
       for (const pty of ptys.values()) pty.setScrollbackCap(next.scrollbackCap)
     }
-    // Changing identity is the one settings change with a visible ceremony: the
-    // new accent sweeps the window. --ac is held back to the sweep's midpoint so
-    // the trailing half of the band reveals UI that has already repainted; the
-    // sweep element calls applyIdentity when it gets there.
-    // An override — a running command, or the focused session's profile colour —
-    // is painting the UI, so a sweep would advertise a colour that is not going
-    // to appear. Change the setting silently instead; it shows on any session
-    // that inherits the identity, and on this one if its override goes away.
-    const overridden = get().commandAccent !== null
-    const sweeping =
-      patch.accent !== undefined &&
-      patch.accent !== current.accent &&
-      !overridden &&
-      !prefersReducedMotion()
-
-    if (sweeping) {
-      // Density is not part of the ceremony; only --ac waits for the midpoint.
-      document.documentElement.dataset.density = next.density
-    } else {
-      applyTheme(next, get().commandAccent)
-    }
-
+    // Settings apply immediately — there is no Save button and there should not
+    // be one. A panel geometry change repaints every frame in the window on the
+    // next paint, which is the point: the settings panel is itself a panel, so
+    // you are editing the surface you are looking at.
+    applyTheme(next)
     set({ settingsValues: next })
-
-    // Editing the rules while something is running should take effect at once —
-    // enabling a rule for the running command colours the UI immediately, and
-    // disabling it reverts.
-    if (patch.commandAccents) {
-      set((st) => ({ commandAccent: syncCommandAccent(st) }))
-    }
-
     persist()
-
-    if (sweeping) {
-      // The nonce makes a rapid re-switch remount the element rather than queue
-      // behind the one in flight, so five fast switches land on the fifth colour.
-      // Carries the intensity adjustment too, so the band shows the colour that
-      // is actually about to land rather than the unadjusted identity value.
-      set({ identitySweep: { id: sweepNonce++, color: withIntensity(next.accent, next.intensity) } })
-    }
   },
 
   setKeybinding(action, chord, swapWith) {
@@ -935,17 +841,6 @@ export const useStore = create<StoreState>((set, get) => ({
     persist()
   },
 
-  /** Midpoint of the sweep: commit the accent that the band is carrying. */
-  applyIdentity() {
-    applyTheme(get().settingsValues, get().commandAccent)
-  },
-
-  endIdentitySweep(id) {
-    // Guard on the nonce so a late teardown from a superseded sweep cannot
-    // remove the live one.
-    if (get().identitySweep?.id === id) set({ identitySweep: null })
-  },
-
   upsertProfile(profile) {
     set((s) => {
       const idx = s.profiles.findIndex((p) => p.id === profile.id)
@@ -954,7 +849,7 @@ export const useStore = create<StoreState>((set, get) => ({
       // Editing the colour of the focused session's profile repaints as you
       // type, so the swatches in Settings preview against the real interface
       // rather than against themselves.
-      return { profiles, commandAccent: syncCommandAccent({ ...s, profiles }) }
+      return { profiles }
     })
     persist()
   },
@@ -975,8 +870,7 @@ export const useStore = create<StoreState>((set, get) => ({
         },
         // Sessions launched from the deleted profile keep pointing at an id that
         // no longer resolves, so their colour has to fall back to the identity
-        // rather than stay stuck on a profile that is gone.
-        commandAccent: syncCommandAccent({ ...s, profiles }),
+        // rather than stay stuck on a profile that is gone.,
       }
     })
     persist()
@@ -1036,7 +930,7 @@ export const useStore = create<StoreState>((set, get) => ({
       // An adopted session has no profile — which one spawned it died with the
       // page — so this resolves to the identity. It still has to run: the
       // session it just became active over may have been carrying a colour.
-      return { sessions, panes, commandAccent: syncCommandAccent({ ...s, sessions, panes }) }
+      return { sessions, panes }
     })
 
     const pty = new PtySession(id, cwd, sessionCallbacks(set, id), get().settingsValues.scrollbackCap)
@@ -1098,7 +992,7 @@ export const useStore = create<StoreState>((set, get) => ({
       // A new session lands active, so if its profile carries a colour the
       // window has to take it now — nothing else will fire until the first
       // command runs.
-      return { sessions, panes, commandAccent: syncCommandAccent({ ...s, sessions, panes }) }
+      return { sessions, panes }
     })
 
     const pty = new PtySession(id, cwd, sessionCallbacks(set, id), get().settingsValues.scrollbackCap)
@@ -1178,7 +1072,7 @@ export const useStore = create<StoreState>((set, get) => ({
   activateSession: (pane, index) =>
     set((s) => {
       const panes = { ...s.panes, [pane]: { ...s.panes[pane], active: index } }
-      return { panes, commandAccent: syncCommandAccent({ ...s, panes }) }
+      return { panes }
     }),
 
   renameSession: (id, name) =>
@@ -1402,19 +1296,10 @@ export const useStore = create<StoreState>((set, get) => ({
 export function pickSettings(stored: Partial<Settings> | undefined): Settings {
   if (!stored) return DEFAULT_SETTINGS
 
-  const identity = IDENTITIES.find((i) => i.name === stored.identityName)
   const density: Density[] = ['compact', 'normal', 'roomy']
   const ghost: GhostSource[] = ['history', 'scripts', 'off']
 
   return {
-    // Only accept an accent that corresponds to a known identity, so a hand-
-    // edited config cannot leave the UI with an unusable colour.
-    accent: identity?.value ?? DEFAULT_SETTINGS.accent,
-    identityName: identity?.name ?? DEFAULT_SETTINGS.identityName,
-    intensity:
-      typeof stored.intensity === 'number' && Number.isFinite(stored.intensity)
-        ? Math.min(INTENSITY_MAX, Math.max(INTENSITY_MIN, stored.intensity))
-        : DEFAULT_SETTINGS.intensity,
     density: density.includes(stored.density as Density)
       ? (stored.density as Density)
       : DEFAULT_SETTINGS.density,
@@ -1423,22 +1308,7 @@ export function pickSettings(stored: Partial<Settings> | undefined): Settings {
         ? Math.min(60, Math.max(3, stored.foldThreshold))
         : DEFAULT_SETTINGS.foldThreshold,
     renderers: { ...DEFAULT_SETTINGS.renderers, ...(stored.renderers ?? {}) },
-    // Each rule is validated individually: a malformed colour would propagate
-    // through every color-mix-derived token, so a bad row is dropped rather than
-    // allowed to break the theme. An absent list falls back to the shipped
-    // defaults; an empty-but-present list is respected as a deliberate choice.
-    commandAccents: Array.isArray(stored.commandAccents)
-      ? stored.commandAccents.filter(
-          (r): r is CommandAccent =>
-            !!r &&
-            typeof r.id === 'string' &&
-            typeof r.match === 'string' &&
-            typeof r.label === 'string' &&
-            typeof r.color === 'string' &&
-            typeof r.enabled === 'boolean' &&
-            isValidColor(r.color),
-        )
-      : DEFAULT_SETTINGS.commandAccents,
+    panel: pickPanel(stored.panel),
     ghostSource: ghost.includes(stored.ghostSource as GhostSource)
       ? (stored.ghostSource as GhostSource)
       : DEFAULT_SETTINGS.ghostSource,
@@ -1446,10 +1316,6 @@ export function pickSettings(stored: Partial<Settings> | undefined): Settings {
       typeof stored.restoreOnLaunch === 'boolean'
         ? stored.restoreOnLaunch
         : DEFAULT_SETTINGS.restoreOnLaunch,
-    bootSequence:
-      typeof stored.bootSequence === 'boolean'
-        ? stored.bootSequence
-        : DEFAULT_SETTINGS.bootSequence,
     scrollbackCap:
       typeof stored.scrollbackCap === 'number' && stored.scrollbackCap > 0
         ? stored.scrollbackCap
@@ -1458,101 +1324,64 @@ export function pickSettings(stored: Partial<Settings> | undefined): Settings {
   }
 }
 
-/** Monotonic so each sweep is a distinct element, never a reused one. */
-let sweepNonce = 0
+/**
+ * Validate a stored panel block.
+ *
+ * Clamped rather than rejected: the numbers here are geometry, so an
+ * out-of-range value has a sensible nearest neighbour, where a rejected block
+ * would silently discard three good fields alongside one bad one. The bounds
+ * are what stays legible — a border past 4px stops reading as a hairline
+ * system, and a heading below the 12px floor is below the floor.
+ */
+function pickPanel(stored: Partial<PanelSettings> | undefined): PanelSettings {
+  if (!stored) return DEFAULT_PANEL
 
-function prefersReducedMotion(): boolean {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const num = (value: unknown, min: number, max: number, fallback: number): number =>
+    typeof value === 'number' && Number.isFinite(value)
+      ? Math.min(max, Math.max(min, Math.round(value)))
+      : fallback
+
+  const bool = (value: unknown, fallback: boolean): boolean =>
+    typeof value === 'boolean' ? value : fallback
+
+  return {
+    borderWidth: num(stored.borderWidth, 1, 4, DEFAULT_PANEL.borderWidth),
+    cornerStyle: stored.cornerStyle === 'sharp' ? 'sharp' : DEFAULT_PANEL.cornerStyle,
+    frameGap: num(stored.frameGap, 0, 12, DEFAULT_PANEL.frameGap),
+    // 12px is the type floor; nothing in this system goes below it.
+    headingSize: num(stored.headingSize, 12, 20, DEFAULT_PANEL.headingSize),
+    panelBorder: bool(stored.panelBorder, DEFAULT_PANEL.panelBorder),
+    headerBorder: bool(stored.headerBorder, DEFAULT_PANEL.headerBorder),
+    headerFilled: bool(stored.headerFilled, DEFAULT_PANEL.headerFilled),
+    contentBorder: bool(stored.contentBorder, DEFAULT_PANEL.contentBorder),
+  }
 }
 
 /**
- * Recompute the accent override from whatever the focused pane is showing.
+ * Apply the token-level theme to :root.
  *
- * The accent is a single `:root` variable, so it cannot differ per pane. Scoping
- * it to the *focused* pane is the resolution: the colour tracks where you are
- * looking. A command still running in a background pane does not fight for the
- * theme, and focusing that pane picks its colour up.
+ * There is no accent to resolve any more. GRID is functionally monochrome —
+ * colour is a signal on a fixed lightness/chroma plane, never decoration — so
+ * nothing here picks a hue. What is left is the panel geometry, which is a real
+ * user setting because the settings panel documents its own frame with it.
  *
- * Precedence, strongest first:
- *
- *   1. A running command's rule — transient, and the most specific thing on
- *      screen: it says what is happening *right now*.
- *   2. The session's profile accent — which client this shell belongs to. It
- *      outlives any one command, so it is what the window returns to.
- *   3. The global identity, via a null return, meaning "no override".
- *
- * Command over profile is deliberate: a client colour that a running `docker`
- * could not tint would make the command rules useless in exactly the sessions
- * that do the work, and the command's colour is self-reverting where the
- * profile's is not.
- *
- * Called on every block update, focus change, session change and settings
- * change. It writes to the DOM only when the resolved colour actually differs,
- * so the common case (output streaming, no colour change) costs one comparison.
+ * The inner radius is derived rather than stored: it is the outer radius minus
+ * the frame gap, floored at zero, which is what keeps the two lines of a double
+ * frame concentric instead of letting the inner one bulge at the corners.
  */
-function syncCommandAccent(
-  state: Pick<
-    StoreState,
-    'panes' | 'focus' | 'sessions' | 'settingsValues' | 'commandAccent' | 'profiles'
-  >,
-): string | null {
-  const pane = state.panes[state.focus]
-  const sessionId = pane.sessions[pane.active]
-  const session = sessionId ? state.sessions[sessionId] : undefined
-
-  let next: string | null = null
-  if (session) {
-    // The running block, if any. Only one command runs per session at a time.
-    const running = session.blocks.find((b) => b.running)
-    if (running) {
-      // A block that already claimed a colour keeps it for the rest of the run.
-      // The tree is polled, so a later poll could otherwise surface a different
-      // tool and flip the accent mid-command; locking to the first match keeps a
-      // `run-p` launching several watchers from flickering.
-      next =
-        running.accent ??
-        accentFor(running.cmd, state.settingsValues.commandAccents, session.tools)
-    }
-    // No command is claiming the window, so the session's own identity shows.
-    next ??= profileAccent(state.profiles, session.profileId)
-  }
-
-  if (next !== state.commandAccent) {
-    applyTheme(state.settingsValues, next)
-  }
-  return next
-}
-
-/**
- * The accent a session inherits from its profile, or null for the global one.
- *
- * Validated at the point of use rather than trusted from the profile: profiles
- * are hand-editable on disk, and an unparseable `--ac` would propagate through
- * every color-mix-derived token and leave the whole interface unreadable.
- */
-export function profileAccent(profiles: Profile[], profileId: string | undefined): string | null {
-  if (!profileId) return null
-  const accent = profiles.find((p) => p.id === profileId)?.accent
-  return accent && isValidColor(accent) ? accent : null
-}
-
-/** Apply the token-level theme to :root. */
-function applyTheme(settings: Settings, override?: string | null): void {
+function applyTheme(settings: Settings): void {
   const root = document.documentElement
-  // A command override wins over the configured identity for as long as it runs.
-  // `settings.accent` is never mutated, so the user's identity survives untouched
-  // and reverting is just dropping the override.
-  //
-  // Writes --ac-raw, not --ac: tokens.css derives --ac from it with a lightness
-  // floor, so a colour too dark to see becomes visible rather than dissolving
-  // every hairline. Setting --ac here would overwrite that derivation and skip
-  // the floor entirely.
-  //
-  // The intensity slider nudges whichever colour that is — override or
-  // identity alike — rather than only the stored identity value, so "this
-  // command's colour is a bit dim" is fixable the same way as "USER is a bit
-  // dim" instead of only the latter.
-  root.style.setProperty('--ac-raw', withIntensity(override ?? settings.accent, settings.intensity))
+  const { panel } = settings
+
+  const outer = panel.cornerStyle === 'round' ? 8 : 0
+  const inner = Math.max(0, outer - panel.frameGap)
+
+  root.style.setProperty('--panel-border-width', `${panel.borderWidth}px`)
+  root.style.setProperty('--grid-frame-inset', `${panel.frameGap}px`)
+  root.style.setProperty('--panel-radius-outer', `${outer}px`)
+  root.style.setProperty('--panel-radius-inner', `${inner}px`)
+  root.style.setProperty('--type-panel-size', `${panel.headingSize}px`)
+
   root.dataset.density = settings.density
 }
 
@@ -1682,19 +1511,13 @@ interface ConfigSync {
 export function listenForConfigSync(): () => void {
   const pending = listen<ConfigSync>(CONFIG_SYNC, ({ payload }) => {
     if (payload.from === windowLabel) return
-    useStore.setState((s) => {
-      // Re-resolve the accent: the incoming change may alter the identity, the
-      // command rules, or the colour of the profile this window has focused.
-      const next = { ...s, settingsValues: payload.settings, profiles: payload.profiles }
-      return {
-        settingsValues: payload.settings,
-        profiles: payload.profiles,
-        commandAccent: syncCommandAccent(next),
-      }
+    useStore.setState({
+      settingsValues: payload.settings,
+      profiles: payload.profiles,
     })
     // Renderer toggles and density live outside the store's own reactivity.
     setRendererEnabled(payload.settings.renderers)
-    applyTheme(payload.settings, useStore.getState().commandAccent)
+    applyTheme(payload.settings)
   })
 
   let unlisten: UnlistenFn | undefined

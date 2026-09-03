@@ -1,8 +1,15 @@
-/** Horizontal tab strip for one pane's sessions — replaces the old vertical rail. */
+/** Horizontal tab strip for one pane's sessions.
+ *
+ * The dot is the tab's whole state vocabulary: amber for the active local
+ * session, --line-200 for an idle one, cyan for a remote host. Colour is a
+ * signal here rather than an identity — profiles no longer carry accents, so a
+ * tab says *what kind of session this is*, not whose it is.
+ */
 
 import { useRef, useState } from 'react'
 
-import { profileAccent, useStore, type PaneId } from '../state/store'
+import { useStore, type PaneId } from '../state/store'
+import { Icon } from './grid'
 
 interface Props {
   pane: PaneId
@@ -16,7 +23,6 @@ const DRAG_THRESHOLD_PX = 4
 export function PaneTabs({ pane }: Props) {
   const paneState = useStore((s) => s.panes[pane])
   const sessions = useStore((s) => s.sessions)
-  const profiles = useStore((s) => s.profiles)
   const activateSession = useStore((s) => s.activateSession)
   const reorderSession = useStore((s) => s.reorderSession)
   const openSettings = useStore((s) => s.openSettings)
@@ -103,7 +109,6 @@ export function PaneTabs({ pane }: Props) {
             active={index === paneState.active}
             dragging={id === dragId}
             dragOver={index === overIndex && id !== dragId}
-            accent={profileAccent(profiles, session.profileId) ?? undefined}
             onActivate={() => activateSession(pane, index)}
             onPointerDown={(e) => onTabPointerDown(id, e)}
             onPointerMove={onTabPointerMove}
@@ -119,7 +124,7 @@ export function PaneTabs({ pane }: Props) {
         aria-label="New session"
         type="button"
       >
-        +
+        <Icon name="plus" size={16} />
       </button>
     </div>
   )
@@ -131,7 +136,6 @@ function PaneTab({
   active,
   dragging,
   dragOver,
-  accent,
   onActivate,
   onPointerDown,
   onPointerMove,
@@ -142,7 +146,6 @@ function PaneTab({
   active: boolean
   dragging: boolean
   dragOver: boolean
-  accent?: string
   onActivate: () => void
   onPointerDown: (event: React.PointerEvent) => void
   onPointerMove: (event: React.PointerEvent) => void
@@ -189,9 +192,18 @@ function PaneTab({
       tabIndex={0}
       title={remote ? `${session.name} · ${session.host}` : session.name}
     >
+      {/* Cyan says remote before anything else on the tab does — which machine
+          you are typing into is the most consequential thing to be wrong about.
+          Amber is the active local session; an idle one recedes to --line-200. */}
       <span
         className="dot"
-        style={{ color: remote ? 'var(--warn)' : (accent ?? 'var(--ac)') }}
+        style={{
+          color: remote
+            ? 'var(--signal-cyan)'
+            : active
+              ? 'var(--signal-amber)'
+              : 'var(--line-200)',
+        }}
       />
       {editing ? (
         <input
@@ -224,10 +236,14 @@ function PaneTab({
           {session.name}
         </span>
       )}
-      {remote && <span className="panetab__link" aria-label="remote">⇄</span>}
+      {remote && (
+        <span className="panetab__globe" aria-label="remote">
+          <Icon name="globe" size={12} />
+        </span>
+      )}
 
       <button
-        className="panetab__close is-btn is-btn--danger"
+        className="panetab__close"
         onClick={(e) => {
           // Otherwise the tab's own click would re-activate what was just closed.
           e.stopPropagation()
@@ -238,7 +254,7 @@ function PaneTab({
         aria-label={`Close ${session.name}`}
         type="button"
       >
-        ✕
+        <Icon name="x" size={12} />
       </button>
     </div>
   )

@@ -1,18 +1,31 @@
-/** One command execution, rendered as an addressable unit. */
+/** One command execution, rendered as an addressable unit — a GRID panel.
+ *
+ * This is the single biggest change of the rebuild. A block was a bare left
+ * border, then a box with a filled accent header. It is now a panel, and the
+ * panel's own six toggles carry the state: exit status is the border colour and
+ * the header fill, not a chip bolted onto a header. See `blockPanel` in
+ * term/types.ts for the mapping.
+ *
+ * The panel heading names what the block *is* — `BUILD .OUTPUT`, `GIT .STATUS`
+ * — using the origin theme's `WORD .WORD` convention, so a stream of blocks
+ * reads as a log of typed things rather than a run of identical boxes.
+ */
 
 import { memo, useEffect, useState } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 
 import { hasLink, linkify } from '../term/linkify'
 import {
+  blockBadge,
+  blockPanel,
   blockState,
   blockToMarkdown,
-  chipLabel,
   formatDuration,
   formatElapsed,
-  spineVar,
   type Block as BlockModel,
 } from '../term/types'
+import { Badge, Button, Panel, PanelWell, Prompt, TerminalLine, type LineTone } from './grid'
+import type { PanelSettings } from '../state/store'
 import { Structured } from './Structured'
 
 interface Props {
@@ -20,24 +33,57 @@ interface Props {
   foldThreshold: number
   /** The newest block in the stream; it never folds on its own. */
   isLatest: boolean
+  /** The user's panel toggles — the four they control; state owns the rest. */
+  panel: PanelSettings
+  /** Above this many lines a block drops its frame entirely. */
+  rawDumpThreshold: number
+  cwd: string
+  user: string
+  host: string
   onCancel: () => void
   onRerun: (cmd: string) => void
   onToggleFold: () => void
 }
 
-const TONE_VAR: Record<string, string> = {
-  txt: 'var(--fg)',
-  dim: 'var(--fgd)',
-  dd: 'var(--fgdd)',
-  acc: 'var(--ac)',
-  err: 'var(--err)',
-  wrn: 'var(--warn)',
+/** The store's line tones, mapped onto TerminalLine's. */
+const TONE: Record<string, LineTone> = {
+  txt: 'default',
+  dim: 'meta',
+  dd: 'meta',
+  acc: 'accent',
+  err: 'danger',
+  wrn: 'accent',
+}
+
+/** The panel heading for a block, from whichever renderer claimed its output. */
+function headingFor(block: BlockModel): string {
+  switch (block.structured?.kind) {
+    case 'build':
+      return 'BUILD .OUTPUT'
+    case 'git':
+      return 'GIT .STATUS'
+    case 'serve':
+      return 'SERVE .LIVE'
+    case 'test':
+      return 'TEST .RESULT'
+    case 'err':
+      return 'ERROR .OUTPUT'
+    case 'list':
+      return 'LIST .OUTPUT'
+    default:
+      return block.interactive ? 'INTERACTIVE .SESSION' : 'SHELL .STREAM'
+  }
 }
 
 export const Block = memo(function Block({
   block,
   foldThreshold,
   isLatest,
+  panel,
+  rawDumpThreshold,
+  cwd,
+  user,
+  host,
   onCancel,
   onRerun,
   onToggleFold,
@@ -89,128 +135,127 @@ export const Block = memo(function Block({
   const visibleLines = collapsed ? block.lines.slice(0, 6) : block.lines
   const hiddenCount = block.lines.length - visibleLines.length
 
-  return (
-    <div
-      className="block"
-      data-block-id={block.id}
-      // A command that produced nothing has no body, so the header must not draw
-      // a divider into empty space.
-      data-empty={!block.structured && visibleLines.length === 0}
-      // A block that claimed an accent keeps it for good, so the record of what
-      // ran stays legible after the global accent reverts. Overriding the accent
-      // on the block itself rather than styling the header directly means the
-      // spine, chips and every color-mix-derived hairline inside follow along —
-      // the same property that makes the global switcher work, scoped to one
-      // block. Sets --ac-raw so the lightness floor in tokens.css still applies;
-      // writing --ac here would replace the floored derivation with the raw
-      // value and reintroduce the invisible-accent case locally.
-      style={
-        block.accent
-          ? ({ borderLeftColor: spineVar(state), '--ac-raw': block.accent } as React.CSSProperties)
-          : { borderLeftColor: spineVar(state) }
-      }
-    >
-      <div className="block__head">
-        {/* Ordinal first: it makes the stream read as an addressable log rather
-            than loose scrollback, and gives ⌘[/⌘] and search hits a referent the
-            user can actually see. Zero-padded to a fixed width so it cannot
-            reflow the row at 99 → 100. */}
-        <span className="block__seq">{String(block.seq).padStart(4, '0')}</span>
-        <span className="block__prompt">❯</span>
-        <span className="block__cmd">{block.cmd}</span>
-        {/* Spacer only. The design used a hairline here to separate the command
-            from its status, but that was for the spine-only layout — the box now
-            provides the separation and the rule just adds noise. */}
-        <span className="block__gap" />
+  const state_ = blockPanel(block, { isLatest, rawDumpThreshold })
+  const badge = blockBadge(block, isLatest)
 
-        {running ? (
-          <button className="block__cancel is-btn is-btn--danger no-drag" onClick={onCancel} type="button">
-            ⌃C CANCEL
-          </button>
-        ) : (
-          <span className="block__actions">
-            {/* Output and command are separate: wanting one without the other is
-                the common case, and a single COPY that grabs both serves neither. */}
-            <button
-              className="block__action is-btn"
-              onClick={() => void copy('output')}
-              title="Copy output"
-              type="button"
-            >
-              {copied === 'output' ? 'COPIED' : 'COPY OUT'}
-            </button>
-            <button
-              className="block__action is-btn"
-              onClick={() => void copy('command')}
-              title="Copy command"
-              type="button"
-            >
-              {copied === 'command' ? 'COPIED' : 'COPY CMD'}
-            </button>
-            <button
-              className="block__action is-btn"
-              onClick={() => void copy('markdown')}
-              title="Copy command, output and exit status as markdown"
-              type="button"
-            >
-              {copied === 'markdown' ? 'COPIED' : 'COPY MD'}
-            </button>
-            <button
-              className="block__action is-btn"
-              onClick={() => onRerun(block.cmd)}
-              type="button"
-            >
-              RERUN
-            </button>
-          </span>
-        )}
-
-        <span className="block__chip" data-state={state}>
-          <span
-            className="dot"
-            style={{
-              width: 5,
-              height: 5,
-              // Kept mounted at opacity 0 on settled blocks so the row does not
-              // reflow between states.
-              opacity: running ? undefined : 0,
-              animation: running ? 'pul 1.4s ease-in-out infinite' : 'none',
-            }}
-          />
-          {chipLabel(block, state)}
-        </span>
-
-        <span className="block__dur">{duration}</span>
-        <span className="block__ts">{block.ts}</span>
-      </div>
+  const body = (
+    <>
+      <Prompt
+        user={user}
+        host={host}
+        path={cwd}
+        command={block.cmd}
+        // Amber is the prompt's home, but a block that failed or is running
+        // says so in its own signal here too — the prompt row is the line the
+        // eye lands on first inside the panel.
+        tone={state === 'failure' || state === 'cancelled' ? 'danger' : running ? 'live' : 'accent'}
+        meta={
+          <>
+            {duration && <span>{duration}</span>}
+            <span>{block.ts}</span>
+          </>
+        }
+      />
 
       {block.structured ? (
-        <Structured data={block.structured} onRun={onRerun} />
+        <div className="block__content">
+          <Structured data={block.structured} onRun={onRerun} />
+        </div>
       ) : (
-        visibleLines.length > 0 && (
-          <div className="block__out">
-            {visibleLines.map((line, i) => (
-              <div
-                key={i}
-                className="block__line"
-                data-line-text={line.text}
-                style={{ color: TONE_VAR[line.tone] ?? 'var(--fg)' }}
-              >
-                {line.text ? (hasLink(line.text) ? <LineContent text={line.text} /> : line.text) : ' '}
-              </div>
-            ))}
+        visibleLines.length > 0 &&
+        (panel.contentBorder ? (
+          <PanelWell className="block__content">
+            <Lines lines={visibleLines} />
+          </PanelWell>
+        ) : (
+          <div className="block__content">
+            <Lines lines={visibleLines} />
           </div>
-        )
+        ))
       )}
 
+      {/* A text row, not a third band: the fold is an affordance on the output,
+          not another framed region inside an already-framed panel. */}
       {canFold && (
         <button className="block__fold" onClick={onToggleFold} type="button">
-          {collapsed ? `⌄ ${hiddenCount} MORE LINES` : '⌃ COLLAPSE'}
+          {collapsed ? `${hiddenCount} MORE LINES` : 'COLLAPSE'}
         </button>
       )}
-    </div>
+    </>
+  )
+
+  return (
+    <Panel
+      className="block"
+      data-block-id={block.id}
+      // The user's toggles supply the geometry; the block's own state supplies
+      // the colour and the fill. A user who turns headerFilled off loses the
+      // emphasis on the latest block but keeps the red border on a failure —
+      // status is not a preference.
+      showPanel={state_.showPanel}
+      panelBorder={panel.panelBorder}
+      headerBorder={panel.headerBorder}
+      contentBorder={panel.contentBorder}
+      headerFilled={panel.headerFilled && state_.headerFilled}
+      panelColor={state_.panelColor}
+      heading={state_.showPanel ? headingFor(block) : undefined}
+      index={{ current: block.seq }}
+      headerRight={
+        <>
+          {/* Actions occupy their space at all times so the header row never
+              reflows as the pointer enters or leaves the block. */}
+          <span className="block__actions">
+            {running ? (
+              <Button size="sm" variant="signal" tone="danger" onClick={onCancel}>
+                ⌃C CANCEL
+              </Button>
+            ) : (
+              <>
+                {/* Output and command are separate: wanting one without the
+                    other is the common case, and a single COPY that grabs both
+                    serves neither. */}
+                <Button size="sm" variant="ghost" onClick={() => void copy('output')} title="Copy output">
+                  {copied === 'output' ? 'COPIED' : 'COPY OUT'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void copy('command')} title="Copy command">
+                  {copied === 'command' ? 'COPIED' : 'COPY CMD'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void copy('markdown')}
+                  title="Copy command, output and exit status as markdown"
+                >
+                  {copied === 'markdown' ? 'COPIED' : 'COPY MD'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => onRerun(block.cmd)}>
+                  RERUN
+                </Button>
+              </>
+            )}
+          </span>
+          <Badge tone={badge.tone} dot={badge.dot}>
+            {badge.label}
+          </Badge>
+        </>
+      }
+    >
+      {body}
+    </Panel>
   )
 })
+
+function Lines({ lines }: { lines: { text: string; tone: string }[] }) {
+  return (
+    <>
+      {lines.map((line, i) => (
+        <TerminalLine key={i} tone={TONE[line.tone] ?? 'default'} data-line-text={line.text}>
+          {line.text ? (hasLink(line.text) ? <LineContent text={line.text} /> : line.text) : ' '}
+        </TerminalLine>
+      ))}
+    </>
+  )
+}
 
 /**
  * One line's text, with any bare URLs split out as clickable spans.

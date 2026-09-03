@@ -1,196 +1,280 @@
-/* TRMNL design tokens.
+/* GRID design tokens for CRGGR.sh.
  *
- * Verbatim from the handoff, which lifted them from educlopez/thegridcn-ui.
+ * Lifted from the handoff's `tokens.applied.json` — the GRID default set merged
+ * with this project's live Panels settings. Where the two disagree the applied
+ * set wins, and four rows do:
  *
- * The load-bearing property here: every neutral is derived from --ac via
- * color-mix, so setting --ac recolours the entire interface. Do not replace any
- * of these derivations with a literal value — that is what makes the identity
- * switcher work.
+ *   --panel-border-width  2px   (GRID default 1px)
+ *   --grid-frame-inset    4px   (GRID default 5px)
+ *   --panel-border-style  round (GRID default sharp)
+ *   --type-panel-size     14px  (GRID default 12px)
+ *
+ * Those four are the whole visual character of the rebuild. The round corner in
+ * particular is a deliberate override of DESIGN_GUIDE.md, which calls a rounded
+ * card a bug — the live theme setting overrides that on purpose. Do not
+ * "correct" the radius back to 0.
+ *
+ * Nothing here derives a neutral from the accent. That was the old system's
+ * load-bearing trick and it is gone: GRID is functionally monochrome, and
+ * colour is a *signal* on a fixed lightness/chroma plane, never decoration.
+ * Every value below is a literal, which is also why xterm can now read these
+ * with a plain getPropertyValue — no relative-colour-syntax probe needed.
  */
 
-@font-face {
-  font-family: 'Geist Mono';
-  src: url('../fonts/geist-mono.woff2') format('woff2-variations');
-  font-weight: 300 600;
-  font-display: block;
-}
+/* --- Fonts. Bundled locally; the desktop build has no network at paint. ---- */
 
 @font-face {
-  font-family: 'Orbitron';
-  src: url('../fonts/orbitron.woff2') format('woff2-variations');
-  font-weight: 400 900;
+  font-family: 'Rajdhani';
+  src: url('../fonts/rajdhani-400.woff2') format('woff2');
+  font-weight: 400;
   font-display: block;
 }
 
 @font-face {
   font-family: 'Rajdhani';
-  src: url('../fonts/rajdhani.woff2') format('woff2');
-  font-weight: 500 700;
+  src: url('../fonts/rajdhani-500.woff2') format('woff2');
+  font-weight: 500;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('../fonts/rajdhani-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('../fonts/rajdhani-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  src: url('../fonts/space-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  src: url('../fonts/space-mono-700.woff2') format('woff2');
+  font-weight: 700;
   font-display: block;
 }
 
 :root {
-  /* --- Identity (accent). Default: USER. ---------------------------------- */
-  /* The colour as chosen. Nothing reads this directly — see --ac below. */
-  --ac-raw: oklch(0.93 0.045 220);
-
-  /* The accent everything derives from, with a lightness floor.
-   *
-   * Every hairline, wash and fill in this file is `--ac` at low opacity over a
-   * near-black surface, which silently assumes the accent is *lighter* than the
-   * page. The five shipped identities all are, so the assumption held until the
-   * colour picker made an arbitrary colour one click away. Set black and the
-   * whole interface dissolves: `--bd` becomes oklch(0 0 0) at 36% over #07090d,
-   * which is nothing at all.
-   *
-   * 0.62 is the floor for structure — enough for a hairline to read against the
-   * page without lifting a mid-tone accent so far that it stops looking like
-   * the colour that was picked. Relative colour syntax raises only L, so hue
-   * and chroma survive; a fully desaturated pick (black, #424242) has no hue to
-   * keep and correctly lands on grey rather than inventing one.
+  /* --- Void and surfaces -------------------------------------------------
+   * True black is the canvas. Surfaces lift by a few points only; nothing
+   * floats on grey.
    */
-  --ac: oklch(from var(--ac-raw) max(l, 0.62) c h);
-  --acd: color-mix(in oklch, var(--ac) 55%, #000);
+  --void: #000000;
+  --surface-0: #000000;
+  --surface-1: #060809;
+  --surface-2: #0c1013;
+  --surface-3: #141a1e;
+  --surface-scrim: rgb(0 0 0 / 0.78);
 
-  /* The accent as *text*, floored higher than the structural one above.
-   *
-   * Fills only need to be visible; text has to be readable. A deep navy lands at
-   * 1.5:1 against --page — invisible rather than merely low-contrast — and the
-   * 0.62 structural floor only lifts it to 5.4:1. 0.7 clears 7:1 (WCAG AAA) at
-   * every hue while leaving all five shipped identities untouched, since they
-   * already sit above it.
-   *
-   * Deliberately not `contrast-color()`, which is supported in this webview but
-   * answers a different question: it returns black or white for text on a given
-   * background, whereas this is accent-coloured text on a fixed dark surface.
-   * Using it would discard the accent and paint every lit control plain white.
+  /* --- Lines ------------------------------------------------------------
+   * The load-bearing part of the system. Four brightnesses, one weight:
+   * hierarchy comes from how *bright* a line is and how many are stacked,
+   * never from thickness.
    */
-  --act: oklch(from var(--ac) max(l, 0.7) c h);
+  --line-100: #d6eaf2; /* 16.9:1 — frames, active borders, dialog frames */
+  --line-200: #8fa8b4; /*  8.4:1 — dividers, secondary rules, control border */
+  --line-300: #4a5a63; /*  2.9:1 — gridlines, inactive borders, leader dots */
+  --line-400: #202a2f; /*       — backdrop grid, faint table gridlines */
 
-  /* --- Surfaces ---------------------------------------------------------- */
-  --bg: oklch(0.055 0.018 250);
-  --pnl: #0a0f19;
-  --card: oklch(0.095 0.02 250);
-
-  /* Intentional hard-coded surfaces, per the handoff's "all intentional" list. */
-  --page: #07090d;
-  --rail: #080d15;
-  --well: #070c14;
-  --pane-idle: #05080e;
-
-  /* The glyph colour for a control whose interior is filled solid accent — see
-   * `.is-btn` in app.css. Lives with the surfaces because that is what it is: the
-   * page showing through the glyph, not a colour of its own.
-   *
-   * This is the one place `contrast-color()` would be answering the right
-   * question, text genuinely sitting *on* the accent rather than on the page, but
-   * it is unnecessary here: --ac carries a 0.62 lightness floor, so a filled
-   * interior is always light enough for the darkest surface to read against it —
-   * verified at the worst case, where a picked black floors to a mid grey. A
-   * fixed value also keeps the inversion identical across every identity, where
-   * contrast-color() would flip to white on the darker picks and make the same
-   * button look like a different control.
+  /* --- Ink --------------------------------------------------------------
+   * --ink-400 is a trap: it is for disabled state only, never load-bearing
+   * copy. A Tab-acceptable autocomplete ghost *is* load-bearing — the user
+   * acts on it — so the composer's ghost uses --ink-300.
    */
-  --on-ac: var(--page);
+  --ink-100: #e4f2f8; /* 18.2:1 — primary text, the typed command */
+  --ink-200: #a8bcc6; /* 10.7:1 — secondary text, terminal output default */
+  --ink-300: #6b7c85; /*  4.8:1 — meta, timestamps, units, counters */
+  --ink-400: #47555c; /*  2.8:1 — disabled only */
+  --ink-invert: #000000; /*      — text on a filled signal chip or header */
 
-  /* --- Hairlines and fills, all accent-derived ---------------------------- */
-  --bd: color-mix(in oklch, var(--ac) 36%, transparent);
-  --bd2: color-mix(in oklch, var(--ac) 23%, transparent);
-  --wash: color-mix(in oklch, var(--ac) 8%, transparent);
-  --wash2: color-mix(in oklch, var(--ac) 3.5%, transparent);
+  /* --- Signal plane ------------------------------------------------------
+   * Every signal hue sits on the same lightness/chroma plane — L 0.83 /
+   * C 0.14 — so nothing shouts louder than anything else. Hue is the only
+   * variable. Red is the one deliberate exception at L 0.70 / C 0.19, so
+   * alarm reads hotter than the rest.
+   */
+  --signal-amber: #f6c56a;
+  --signal-cyan: #5fcdf3;
+  --signal-green: #5edca9;
+  --signal-red: #f1604c;
+  --signal-violet: #e6a6f2; /* unused here; reserved */
 
-  /* --- Text -------------------------------------------------------------- */
-  --fg: oklch(0.94 0.02 220);
-  --fgd: oklch(0.66 0.015 220);
-  --fgdd: oklch(0.47 0.012 220);
+  /* Role aliases. Components reach for the role, not the hue. */
+  --accent: var(--signal-amber);
+  --live: var(--signal-cyan);
+  --success: var(--signal-green);
+  --danger: var(--signal-red);
+  --special: var(--signal-violet);
 
-  /* --- State ------------------------------------------------------------- */
-  --err: oklch(0.64 0.23 28);
-  --warn: oklch(0.78 0.17 62);
+  /* Tint fills — the only translucency in the system, never above 0.16.
+   * Written as oklch so the fill sits on the same plane as its signal. */
+  --amber-fill: oklch(0.83 0.14 82 / 0.12);
+  --cyan-fill: oklch(0.83 0.14 225 / 0.12);
+  --green-fill: oklch(0.83 0.14 155 / 0.12);
+  --red-fill: oklch(0.7 0.19 27 / 0.14);
+  --violet-fill: oklch(0.83 0.14 325 / 0.12);
+  --accent-fill: var(--amber-fill);
+  --accent-on: var(--ink-invert);
 
-  /* --- Type -------------------------------------------------------------- */
-  --mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --ui: 'Rajdhani', system-ui, sans-serif;
-  --display: 'Orbitron', system-ui, sans-serif;
+  /* --- Type -------------------------------------------------------------
+   * Two families, hard split by job. The test is: did a *person* write it, or
+   * did a *system* emit it?
+   */
+  --font-display: 'Rajdhani', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* Density: drives block output line-height only. Default normal. */
-  --lh: 1.62;
+  /* 12px is THE FLOOR. The films go smaller; we don't. */
+  --text-2xs: 12px; /* micro label — caps + wide tracking only */
+  --text-xs: 13px; /* dense data rows, terminal body */
+  --text-sm: 14px; /* secondary UI, table cells, settings rows, panel headings */
+  --text-md: 16px; /* body copy */
+  --text-xl: 20px; /* wordmark in the top bar */
+  --text-4xl: 40px; /* attach-frame wordmark */
 
-  /* The type floor. The prototype used 8.5–9px; the handoff requires 10px in
-   * production. These two are the only micro-label sizes — keep them here so the
-   * floor cannot drift back down in individual components. */
-  --t-micro: 10px;
-  --t-label: 10px;
+  --track-label: 0.18em; /* 12px caps */
+  --track-caps: 0.12em; /* 13–20px caps */
+  --track-mono: 0.02em;
+  --track-title: 0.04em; /* large display */
+
+  --leading-flat: 1; /* labels, counters */
+  --leading-snug: 1.25;
+  --leading-normal: 1.55; /* body */
+  --leading-mono: 1.65; /* terminal + code */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600; /* the default for caps labels */
+  --weight-bold: 700;
+
+  /* --- Space ------------------------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* --- Controls ----------------------------------------------------------
+   * Pairing a height with the wrong padding is the easiest mistake in the
+   * system: 36 goes with 14, 44 goes with 20.
+   */
+  --control-h-sm: 28px;
+  --control-px-sm: 10px;
+  --control-h-md: 36px;
+  --control-px-md: 14px;
+  --control-h-lg: 44px;
+  --control-px-lg: 20px;
+  --hit-min: 44px; /* never ship an interactive target smaller */
+
+  /* --- Stroke and radius -------------------------------------------------
+   * Buttons, inputs and selects are square. Only keycaps and chips get 2px,
+   * and only status dots get a pill.
+   */
+  --stroke-1: 1px; /* everything that is not a panel border */
+  --stroke-2: 2px; /* focus ring, active tab/nav edge marker. Rare. */
+  --radius-0: 0px;
+  --radius-1: 2px;
+  --radius-pill: 999px;
+  --frame-notch: 18px; /* corner-bracket arm length */
+
+  /* --- Panels ------------------------------------------------------------
+   * The applied set, not the GRID defaults — see the file header.
+   * --panel-radius-inner is `max(0, outer - frame-gap)`, computed here so a
+   * change to either input keeps the two frames concentric.
+   */
+  --panel-border-width: 2px;
+  --grid-frame-inset: 4px;
+  --panel-radius-outer: 8px;
+  --panel-radius-inner: 4px;
+  --panel-pad: 16px;
+  --panel-header-h: 26px;
+  --panel-header-pad: 10px 14px;
+  --panel-gap: 12px;
+  --type-panel-size: var(--text-sm);
+
+  /* --- Fields ------------------------------------------------------------ */
+  --field-bg: var(--surface-2);
+  --field-border: var(--line-200);
+  --field-border-hover: var(--line-100);
+  --border-focus: var(--signal-cyan);
+
+  /* --- Focus -------------------------------------------------------------
+   * Square, cyan, never a glow.
+   */
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  --focus-color: var(--signal-cyan);
+
+  /* --- Elevation ---------------------------------------------------------
+   * There are no drop shadows. Nothing casts light onto anything else,
+   * because nothing is *above* anything else — it is all etched into the same
+   * pane of glass. Depth is line brightness, then surface fill, then a scrim.
+   *
+   * --elev-dialog is the one sanctioned exception: a hard 1px halo of void so
+   * a dialog's frame never touches content bleeding behind the scrim.
+   */
+  --elev-dialog: 0 0 0 1px var(--void);
+  --scrim: var(--surface-scrim);
+  --scrim-blur: 2px; /* the only blur in the system */
+
+  /* --- Motion ------------------------------------------------------------
+   * This system is STILL. No entrance animation, no easing with personality,
+   * no bounce, no fade-in. A machine display either shows a state or it
+   * doesn't.
+   *
+   * --transition-state transitions ONLY colour, background-color and
+   * border-color. Transitioning transform, opacity, width or box-shadow is
+   * wrong by construction.
+   */
+  --dur-instant: 0ms;
+  --dur-state: 80ms; /* hover, press, check. Linear. Nothing else. */
+  --dur-overlay: 0ms; /* dialogs and toasts appear. They do not fade in. */
+  --ease-linear: linear;
+  --ease-state: linear;
+  --transition-state:
+    color var(--dur-state) var(--ease-state),
+    background-color var(--dur-state) var(--ease-state),
+    border-color var(--dur-state) var(--ease-state);
+
+  /* Terminal line-height. The density setting drives block output leading and
+   * nothing else; it starts from the mono leading above. */
+  --leading-block: var(--leading-mono);
 }
 
-/* --- Density ------------------------------------------------------------- */
+/* --- Density -------------------------------------------------------------
+ * Output leading only. Chrome does not move.
+ */
 
-:root[data-density='compact'] { --lh: 1.42; }
-:root[data-density='normal']  { --lh: 1.62; }
-:root[data-density='roomy']   { --lh: 1.9; }
+:root[data-density='compact'] { --leading-block: 1.42; }
+:root[data-density='normal'] { --leading-block: 1.65; }
+:root[data-density='roomy'] { --leading-block: 1.9; }
 
-/* --- Animation. The complete set; the handoff says do not add more. ------- */
-
-/* Retained from the handoff's canonical set. Currently unused: the composer's
- * caret is the browser's own, which blinks per the OS setting. */
-@keyframes blk {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
-}
-
-@keyframes pul {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-@keyframes spn {
-  to { transform: rotate(360deg); }
-}
-
-/* Deliberate documented deviation: `bootbr` and `bootwd` are additions to the
- * closed set above. They exist for the cold-boot sequence, which the handoff does
- * not spec. Scoped to that one component and to a single 400ms pass at launch —
- * nothing steady-state uses them, and the sequence is skipped entirely under
- * prefers-reduced-motion. */
-
-@keyframes bootbr {
-  from { opacity: 0; transform: scale(2.4); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes bootwd {
-  from { opacity: 0; letter-spacing: 0.62em; }
-  to { opacity: 1; letter-spacing: 0.2em; }
-}
-
-/* Deliberate documented deviation: `idsweep` and `trace` below are also additions
- * to the closed set above. Both exist because an instant change reads as a glitch
- * rather than an act — switching identity repaints every derived colour at once,
- * and a split divider otherwise materialises with no indication of where it came
- * from. Each is one short transform/opacity pass on a transient element, and both
- * are skipped entirely under prefers-reduced-motion. */
-
-/* Identity sweep. The --ac swap happens at the midpoint, so the trailing half of
- * the band reveals already-repainted UI rather than announcing the change twice. */
-@keyframes idsweep {
-  0% { opacity: 0; transform: translateX(-100%); }
-  40% { opacity: 1; }
-  100% { opacity: 0; transform: translateX(100%); }
-}
-
-/* Divider trace. One keyframe serves both axes: --trace-from-x / --trace-from-y
- * pick which one starts collapsed, so a row split animates scaleY and a column
- * split scaleX from the same declaration. Transform-only, so it stays on the
- * compositor. */
-@keyframes trace {
-  from { transform: scale(var(--trace-from-x), var(--trace-from-y)); }
-  to { transform: scale(1, 1); }
-}
+/* --- Reduced motion ------------------------------------------------------
+ * There is almost nothing to reduce — the system ships still. The 80ms state
+ * transition is the only thing that moves, and it drops to zero.
+ */
 
 @media (prefers-reduced-motion: reduce) {
-  /* The decorative pulse, sweep and trace all collapse. The text caret is not
-   * affected — it is the browser's, and macOS owns whether it blinks. */
-  *, *::before, *::after {
+  :root {
+    --dur-state: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

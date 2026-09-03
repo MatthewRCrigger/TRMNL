@@ -1,29 +1,41 @@
-/** Window shell: title bar, rail, panes, divider, and the modal surfaces. */
+/** Window shell: top bar, panes, divider, and the modal surfaces.
+ *
+ * The whole window is a double frame in --line-100 — the outermost container of
+ * a view, which is the one place the figure is allowed. Everything inside it is
+ * single hairlines, or the screen turns to corduroy.
+ *
+ * There is no boot sequence, no identity sweep and no divider trace. GRID's
+ * motion rules forbid entrance animation outright: a machine display either
+ * shows a state or it doesn't. What replaces the cold boot is the static attach
+ * frame, which is what is on screen for the ~40ms before first paint rather
+ * than a sequence anyone waits through.
+ */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { formatWindowTitle } from './lib/windowTitle'
 import { formatChord, resolveKeybindings } from './lib/keybindings'
-import { Boot } from './components/Boot'
+import { AttachFrame } from './components/AttachFrame'
 import { CloseConfirm } from './components/CloseConfirm'
 import { ContextMenu } from './components/ContextMenu'
 import { Pane } from './components/Pane'
 import { Palette } from './components/Palette'
 import { Search } from './components/Search'
 import { Settings } from './components/Settings'
-import { StatusBar } from './components/StatusBar'
-import { TitleBar } from './components/TitleBar'
+import { TelemetryBar } from './components/TelemetryBar'
+import { TopBar } from './components/TopBar'
+import { Frame } from './components/grid'
 import { listenForMenuEvents } from './lib/menuEvents'
 import { listenForConfigSync, useStore } from './state/store'
 
 /**
  * Module scope, so it survives a re-mount of App but not a real app launch.
- * That is what makes the boot sequence once-per-launch: a new session, a split
- * and a session switch all leave this alone, and none of them re-mount App
- * anyway.
+ * The attach frame is shown once per launch and never again — a new session, a
+ * split and a session switch all leave this alone, and none of them re-mount
+ * App anyway.
  */
-let bootConsumed = false
+let attachConsumed = false
 
 export function App() {
   const split = useStore((s) => s.split)
@@ -34,24 +46,22 @@ export function App() {
   const focus = useStore((s) => s.focus)
   const setFocus = useStore((s) => s.setFocus)
 
-  const sweep = useStore((s) => s.identitySweep)
-  const bootSequence = useStore((s) => s.settingsValues.bootSequence)
-
   const init = useStore((s) => s.init)
   const started = useRef(false)
 
-  // Drives the cold-boot overlay's exit. It flips when init settles, so the
-  // animation can never outlive real initialisation. Read from the module-scope
-  // latch so a re-mount after launch (StrictMode, HMR) does not replay the boot.
-  const [initSettled, setInitSettled] = useState(bootConsumed)
+  // Drives the attach frame's removal. It flips when init settles — the frame
+  // is what is on screen *until there is something to show*, not a timed
+  // sequence. Read from the module-scope latch so a re-mount after launch
+  // (StrictMode, HMR) does not replay it.
+  const [initSettled, setInitSettled] = useState(attachConsumed)
 
   useEffect(() => {
     if (started.current) return
     started.current = true
-    // `finally`, not `then`: a failed init must still release the overlay,
-    // otherwise an error state would sit behind a decorative animation.
+    // `finally`, not `then`: a failed init must still release the frame,
+    // otherwise an error state would sit behind a splash.
     void init().finally(() => {
-      bootConsumed = true
+      attachConsumed = true
       setInitSettled(true)
     })
   }, [init])
@@ -109,8 +119,11 @@ export function App() {
   }, [])
 
   return (
-    <div className="frame">
-      <TitleBar />
+    /* The window's double frame: outer 2px / 8px radius / 4px of void / inner
+       2px / 4px radius. Reserved for the outermost container of a view, which
+       this is. */
+    <Frame className="frame" color="var(--line-100)">
+      <TopBar />
 
       <div className="frame__body">
         <div
@@ -138,6 +151,10 @@ export function App() {
             </div>
           )}
 
+          {/* A single 1px --line-300 line, not a 4px slab with a grip. Depth
+              does the work instead: the focused pane sits on --void and the
+              unfocused one on --surface-1. The hit area is widened by a
+              transparent ::before rather than by the line itself. */}
           {split && !paneMaximized && (
             <div
               className="divider"
@@ -150,10 +167,7 @@ export function App() {
               role="separator"
               aria-orientation={splitDir === 'row' ? 'vertical' : 'horizontal'}
               aria-label="Resize panes"
-            >
-              <DividerTrace />
-              <span className="divider__grip" />
-            </div>
+            />
           )}
 
           {split && (!paneMaximized || focus === 'b') && (
@@ -164,17 +178,11 @@ export function App() {
         </div>
       </div>
 
-      <StatusBar />
+      <TelemetryBar />
 
-      {/* Keyed on the nonce so a switch mid-sweep remounts the band from its
-          start frame rather than reusing an element already part-way across. */}
-      {sweep && <IdentitySweep key={sweep.id} id={sweep.id} color={sweep.color} />}
-
-      {/* Mounts on the first paint, before the persisted setting is known — the
-          animation has to start with the window or it is pointless. `ready`
-          carries both exit conditions: init settling, and the stored setting
-          turning out to be off (init is what loads it). */}
-      {!bootConsumed && <Boot ready={initSettled || !bootSequence} />}
+      {/* Replaces the cold boot. Nothing draws in, nothing resolves from wide
+          tracking — it is what is on screen before first paint, not a sequence. */}
+      {!attachConsumed && !initSettled && <AttachFrame />}
 
       <Palette />
       <Settings />
@@ -184,91 +192,8 @@ export function App() {
 
       {/* Focus-follows-click is handled per pane; this catches the gap between
           them so a click never lands nowhere. */}
-      <div
-        className="frame__sink"
-        onMouseDown={() => setFocus(focus)}
-        aria-hidden
-      />
-    </div>
-  )
-}
-
-const SWEEP_MS = 250
-
-/**
- * One pass of the incoming accent across the window.
- *
- * Keyed on the store's nonce by the parent, so a switch made mid-sweep replaces
- * this element rather than restarting it — five fast switches leave exactly one
- * band in flight, carrying the fifth colour.
- *
- * Teardown is belt-and-braces on purpose. `animationend` is the normal path, but
- * it never fires if the animation is dropped (a hidden window throttles frames,
- * `animation: none` from a user stylesheet, an unmount race), and a stuck
- * full-window layer is the worst possible failure even though it cannot swallow
- * clicks. The timer guarantees the element is gone; both paths are nonce-guarded
- * in the store so whichever loses the race is a no-op.
- */
-function IdentitySweep({ id, color }: { id: number; color: string }) {
-  const applyIdentity = useStore((s) => s.applyIdentity)
-  const endIdentitySweep = useStore((s) => s.endIdentitySweep)
-
-  useEffect(() => {
-    // The swap lands at the midpoint so the trailing half reveals repainted UI.
-    const swap = window.setTimeout(applyIdentity, SWEEP_MS / 2)
-    // Generous margin over the animation so the timer is a backstop, not a race
-    // with animationend.
-    const done = window.setTimeout(() => endIdentitySweep(id), SWEEP_MS + 150)
-    return () => {
-      clearTimeout(swap)
-      clearTimeout(done)
-      // Unmounting before the midpoint must still commit the colour, or a switch
-      // superseded early would leave --ac on the previous identity.
-      applyIdentity()
-    }
-  }, [id, applyIdentity, endIdentitySweep])
-
-  return (
-    <div
-      className="frame__sweep"
-      style={{ '--sweep-ac': color } as React.CSSProperties}
-      onAnimationEnd={() => endIdentitySweep(id)}
-      aria-hidden
-    />
-  )
-}
-
-/**
- * The divider drawing itself along its length when a split is created.
- *
- * Fires on appearance only. The parent mounts this with the divider, and
- * `appeared` latches false once the trace is done, which unmounts the element —
- * so a re-render, a drag, or a later change of split axis cannot re-trigger it.
- * The divider itself is never animated: the trace is a throwaway child, so the
- * full 4px hit area is draggable from the first frame and onDividerDown/Move/Up
- * are untouched. It also never sees pointer events (`pointer-events: none`).
- *
- * animationend is the normal teardown; the timer is the backstop for when it does
- * not arrive (throttled frames in a hidden window, a user stylesheet killing the
- * animation). Whichever fires first wins and the other is a no-op.
- */
-function DividerTrace() {
-  const [appeared, setAppeared] = useState(true)
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setAppeared(false), 400)
-    return () => clearTimeout(timer)
-  }, [])
-
-  if (!appeared) return null
-
-  // data-dir on the parent .divider selects the axis; see .divider__trace.
-  return (
-    <span
-      className="divider__trace"
-      onAnimationEnd={() => setAppeared(false)}
-      aria-hidden
-    />
+      <div className="frame__sink" onMouseDown={() => setFocus(focus)} aria-hidden />
+    </Frame>
   )
 }
 

@@ -3,88 +3,50 @@
 
 import { describe, expect, it } from 'vitest'
 
-import {
-  DEFAULT_IDENTITY,
-  IDENTITIES,
-  INTENSITY_DEFAULT,
-  INTENSITY_MAX,
-  INTENSITY_MIN,
-  pickSettings,
-  profileAccent,
-  type Profile,
-} from './store'
+import { DEFAULT_PANEL, pickSettings } from './store'
 
 describe('pickSettings', () => {
-  it('defaults to the USER identity', () => {
-    const s = pickSettings(undefined)
-    expect(s.identityName).toBe('USER')
-    expect(s.accent).toBe(DEFAULT_IDENTITY.value)
-  })
-
   it('drops settings that no longer exist', () => {
-    // A config written before glow and scanlines were removed. Spreading it
-    // would carry those keys back into the next save.
+    // A config written before the identity system, glow and scanlines were
+    // removed. Spreading it would carry those keys back into the next save.
     const s = pickSettings({
       identityName: 'PROGRAM',
+      accent: 'oklch(0.75 0.18 195)',
+      intensity: 1.4,
       glow: 'balanced',
       scanlines: true,
+      bootSequence: true,
+      commandAccents: [{ id: 'a', match: 'x', label: 'X', color: 'red', enabled: true }],
     } as never)
 
     expect(Object.keys(s).sort()).toEqual([
-      'accent',
-      'bootSequence',
-      'commandAccents',
       'density',
       'foldThreshold',
       'ghostSource',
-      'identityName',
-      'intensity',
       'keybindings',
+      'panel',
       'renderers',
       'restoreOnLaunch',
       'scrollbackCap',
     ])
-    expect('glow' in s).toBe(false)
-    expect('scanlines' in s).toBe(false)
-  })
 
-  it('keeps a valid stored identity rather than forcing the default', () => {
-    const s = pickSettings({ identityName: 'ARES' } as never)
-    expect(s.identityName).toBe('ARES')
-    // The accent is re-derived from the identity, never trusted from the file.
-    expect(s.accent).toBe(IDENTITIES.find((i) => i.name === 'ARES')!.value)
-  })
-
-  it('falls back when the stored identity is unknown', () => {
-    const s = pickSettings({ identityName: 'FLYNN', accent: 'red' } as never)
-    expect(s.identityName).toBe('USER')
-    expect(s.accent).toBe(DEFAULT_IDENTITY.value)
-  })
-
-  it('ignores an accent that does not belong to an identity', () => {
-    // Otherwise a hand-edited file could leave the UI an unusable colour.
-    const s = pickSettings({ identityName: 'USER', accent: 'chartreuse' } as never)
-    expect(s.accent).toBe(DEFAULT_IDENTITY.value)
+    for (const gone of [
+      'accent',
+      'identityName',
+      'intensity',
+      'glow',
+      'scanlines',
+      'bootSequence',
+      'commandAccents',
+    ]) {
+      expect(gone in s).toBe(false)
+    }
   })
 
   it('clamps the fold threshold to its range', () => {
     expect(pickSettings({ foldThreshold: 900 } as never).foldThreshold).toBe(60)
     expect(pickSettings({ foldThreshold: -5 } as never).foldThreshold).toBe(3)
     expect(pickSettings({ foldThreshold: 12 } as never).foldThreshold).toBe(12)
-  })
-
-  it('defaults intensity to unmodified and clamps it to the slider range', () => {
-    expect(pickSettings(undefined).intensity).toBe(INTENSITY_DEFAULT)
-    expect(pickSettings({ intensity: 5 } as never).intensity).toBe(INTENSITY_MAX)
-    expect(pickSettings({ intensity: -5 } as never).intensity).toBe(INTENSITY_MIN)
-    expect(pickSettings({ intensity: 1.2 } as never).intensity).toBe(1.2)
-  })
-
-  it('falls back to unmodified for a non-numeric intensity', () => {
-    // A hand-edited config might carry a string or NaN; either would break
-    // the oklch arithmetic in withIntensity rather than being clamped by it.
-    expect(pickSettings({ intensity: 'bright' } as never).intensity).toBe(INTENSITY_DEFAULT)
-    expect(pickSettings({ intensity: NaN } as never).intensity).toBe(INTENSITY_DEFAULT)
   })
 
   it('rejects out-of-band enum values', () => {
@@ -108,110 +70,75 @@ describe('pickSettings', () => {
     expect(pickSettings({ restoreOnLaunch: 'yes' } as never).restoreOnLaunch).toBe(true)
   })
 
-  it('defaults the boot sequence on, and rejects a non-boolean', () => {
-    expect(pickSettings(undefined).bootSequence).toBe(true)
-    expect(pickSettings({ bootSequence: false } as never).bootSequence).toBe(false)
-    expect(pickSettings({ bootSequence: 'yes' } as never).bootSequence).toBe(true)
-  })
-
   it('ignores a nonsensical scrollback cap', () => {
     expect(pickSettings({ scrollbackCap: 0 } as never).scrollbackCap).toBe(10_000)
     expect(pickSettings({ scrollbackCap: 500 } as never).scrollbackCap).toBe(500)
   })
 })
 
-describe('identity defaults', () => {
-  it('keeps the CSS fallback and the store default in agreement', () => {
-    // tokens.css sets --ac before React hydrates; a mismatch would show as a
-    // colour flash on launch.
-    expect(DEFAULT_IDENTITY.value).toBe('oklch(0.93 0.045 220)')
+describe('pickSettings: the panel block', () => {
+  it('ships the applied token set, not the GRID defaults', () => {
+    // tokens.applied.json overrides four rows, and those four are the whole
+    // visual character of the build. Round in particular is a deliberate
+    // override of DESIGN_GUIDE.md, not an error to correct.
+    const { panel } = pickSettings(undefined)
+    expect(panel.borderWidth).toBe(2)
+    expect(panel.cornerStyle).toBe('round')
+    expect(panel.frameGap).toBe(4)
+    expect(panel.headingSize).toBe(14)
   })
 
-  it('offers the five identities, CLU carrying the gold', () => {
-    expect(IDENTITIES.map((i) => i.name)).toEqual(['PROGRAM', 'ISO', 'USER', 'ARES', 'CLU'])
-    expect(IDENTITIES.find((i) => i.name === 'CLU')!.value).toBe('oklch(0.85 0.18 90)')
+  it('falls back wholesale when the block is absent', () => {
+    expect(pickSettings({} as never).panel).toEqual(DEFAULT_PANEL)
   })
 
-  it('no longer offers the retired orange', () => {
-    expect(IDENTITIES.some((i) => i.value === 'oklch(0.75 0.2 55)')).toBe(false)
-    expect(IDENTITIES.some((i) => i.name === 'ATHENA')).toBe(false)
-  })
-
-  it('falls back to USER for a config that stored ATHENA', () => {
-    const s = pickSettings({ identityName: 'ATHENA' } as never)
-    expect(s.identityName).toBe('USER')
-  })
-})
-
-describe('pickSettings: command accents', () => {
-  it('falls back to the shipped defaults when absent', () => {
-    expect(pickSettings(undefined).commandAccents.length).toBeGreaterThan(0)
-  })
-
-  it('respects an explicitly empty list', () => {
-    // Present-but-empty is a deliberate "I turned them all off", not missing data.
-    expect(pickSettings({ commandAccents: [] } as never).commandAccents).toEqual([])
-  })
-
-  it('drops a rule whose colour would break the theme', () => {
-    // A malformed colour propagates through every color-mix token, so the row is
-    // discarded rather than allowed through.
-    const s = pickSettings({
-      commandAccents: [
-        { id: 'a', match: 'ok', label: 'Fine', color: 'oklch(0.7 0.1 200)', enabled: true },
-        { id: 'b', match: 'bad', label: 'Broken', color: 'not-a-color', enabled: true },
-      ],
+  it('clamps a number rather than rejecting the whole block', () => {
+    // Geometry has a sensible nearest neighbour, where a rejected block would
+    // discard three good fields alongside one bad one.
+    const { panel } = pickSettings({
+      panel: { borderWidth: 99, frameGap: -4, headingSize: 8, cornerStyle: 'sharp' },
     } as never)
-    expect(s.commandAccents.map((r) => r.id)).toEqual(['a'])
+    expect(panel.borderWidth).toBe(4)
+    expect(panel.frameGap).toBe(0)
+    expect(panel.cornerStyle).toBe('sharp')
+    // 12px is the type floor; nothing in the system goes below it.
+    expect(panel.headingSize).toBe(12)
   })
 
-  it('drops structurally invalid rows', () => {
-    const s = pickSettings({
-      commandAccents: [
-        { id: 'a', match: 'ok', label: 'Fine', color: 'oklch(0.7 0.1 200)', enabled: true },
-        { id: 'c', match: 'x', label: 'NoEnabled', color: 'oklch(0.7 0.1 200)' },
-        null,
-      ],
+  it('keeps a hand-edited value that is already in range', () => {
+    const { panel } = pickSettings({ panel: { borderWidth: 1, frameGap: 6 } } as never)
+    expect(panel.borderWidth).toBe(1)
+    expect(panel.frameGap).toBe(6)
+    // Untouched fields still come from the applied set.
+    expect(panel.headingSize).toBe(DEFAULT_PANEL.headingSize)
+  })
+
+  it('falls back for a non-numeric or NaN measurement', () => {
+    const { panel } = pickSettings({
+      panel: { borderWidth: 'thick', frameGap: NaN },
     } as never)
-    expect(s.commandAccents.map((r) => r.id)).toEqual(['a'])
-  })
-})
-
-describe('profileAccent', () => {
-  const profile = (over: Partial<Profile> = {}): Profile => ({
-    id: 'p1',
-    name: 'client',
-    cwd: '~',
-    shell: '/bin/zsh',
-    connectVia: 'local',
-    startupCmd: '',
-    env: [],
-    ...over,
+    expect(panel.borderWidth).toBe(DEFAULT_PANEL.borderWidth)
+    expect(panel.frameGap).toBe(DEFAULT_PANEL.frameGap)
   })
 
-  it('returns the profile colour so one client reads as one colour', () => {
-    const colour = 'oklch(0.75 0.18 152)'
-    expect(profileAccent([profile({ accent: colour })], 'p1')).toBe(colour)
+  it('treats an unknown corner style as round rather than sharp', () => {
+    // Only the literal 'sharp' opts out. Anything else is a typo, and the
+    // applied default is what the project actually ships.
+    expect(pickSettings({ panel: { cornerStyle: 'bevelled' } } as never).panel.cornerStyle).toBe(
+      'round',
+    )
   })
 
-  it('inherits the global identity when the profile sets no colour', () => {
-    // Null is "no override", which is what leaves --ac on settings.accent.
-    expect(profileAccent([profile()], 'p1')).toBeNull()
+  it('respects an explicitly disabled toggle', () => {
+    const { panel } = pickSettings({
+      panel: { panelBorder: false, headerFilled: false },
+    } as never)
+    expect(panel.panelBorder).toBe(false)
+    expect(panel.headerFilled).toBe(false)
+    expect(panel.headerBorder).toBe(true)
   })
 
-  it('inherits when the session has no profile at all', () => {
-    // An adopted session after a reload: the profile that spawned it is gone.
-    expect(profileAccent([profile({ accent: 'oklch(0.75 0.18 152)' })], undefined)).toBeNull()
-  })
-
-  it('inherits when the profile has been deleted out from under the session', () => {
-    expect(profileAccent([], 'p1')).toBeNull()
-  })
-
-  it('rejects a hand-edited colour rather than breaking every derived token', () => {
-    // Profiles are not validated at load, so this is the layer that has to hold:
-    // an unparseable --ac takes the whole interface with it via color-mix.
-    expect(profileAccent([profile({ accent: 'not-a-color' })], 'p1')).toBeNull()
-    expect(profileAccent([profile({ accent: '' })], 'p1')).toBeNull()
+  it('ignores a non-boolean toggle', () => {
+    expect(pickSettings({ panel: { contentBorder: 'yes' } } as never).panel.contentBorder).toBe(true)
   })
 })
