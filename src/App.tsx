@@ -5,7 +5,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { formatWindowTitle } from './lib/windowTitle'
 import { formatChord, resolveKeybindings } from './lib/keybindings'
-import { Appearance } from './components/Appearance'
 import { Boot } from './components/Boot'
 import { CloseConfirm } from './components/CloseConfirm'
 import { ContextMenu } from './components/ContextMenu'
@@ -178,7 +177,6 @@ export function App() {
       {!bootConsumed && <Boot ready={initSettled || !bootSequence} />}
 
       <Palette />
-      <Appearance />
       <Settings />
       <Search />
       <ContextMenu />
@@ -367,8 +365,8 @@ function useWindowTitle(): void {
 }
 
 /**
- * Global chords. Esc closes in priority order: settings → appearance → palette
- * → search — neither remappable nor part of the resolved keymap below.
+ * Global chords. Esc closes in priority order: settings → palette → search —
+ * neither remappable nor part of the resolved keymap below.
  *
  * ⌘T, ⌘W and ⌘, are absent on purpose: the native menu declares them as key
  * equivalents, so AppKit performs the menu item and this handler never sees
@@ -382,7 +380,7 @@ function useGlobalKeys(): void {
       const store = useStore.getState()
 
       if (event.key === 'Escape') {
-        // Priority order: close-confirm → settings → appearance → palette → search.
+        // Priority order: close-confirm → settings → palette → search.
         // The confirm dialog sits above everything else it could be layered
         // over, so backing out of it takes priority over any other overlay.
         if (store.closeConfirm) {
@@ -390,9 +388,6 @@ function useGlobalKeys(): void {
           event.preventDefault()
         } else if (store.settings.open) {
           store.closeSettings()
-          event.preventDefault()
-        } else if (store.appearance.open) {
-          store.toggleAppearance(false)
           event.preventDefault()
         } else if (store.palette.open) {
           store.closePalette()

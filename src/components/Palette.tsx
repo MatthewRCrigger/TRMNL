@@ -11,7 +11,6 @@ type ItemAction =
   | { type: 'close-pane' }
   | { type: 'run'; cmd: string }
   | { type: 'clear' }
-  | { type: 'appearance' }
   | { type: 'settings' }
 
 interface Item {
@@ -46,7 +45,6 @@ export function Palette() {
   const closeSession = useStore((s) => s.closeSession)
   const runCommand = useStore((s) => s.runCommand)
   const clearBuffer = useStore((s) => s.clearBuffer)
-  const toggleAppearance = useStore((s) => s.toggleAppearance)
   const openSettings = useStore((s) => s.openSettings)
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -90,8 +88,7 @@ export function Palette() {
 
     base.push(
       { group: 'SYSTEM', label: 'Clear Buffer', kbd: '⌃L', action: { type: 'clear' } },
-      { group: 'SYSTEM', label: 'Appearance…', kbd: '⌘,', action: { type: 'appearance' } },
-      { group: 'SYSTEM', label: 'All Settings…', action: { type: 'settings' } },
+      { group: 'SYSTEM', label: 'Settings…', kbd: '⌘,', action: { type: 'settings' } },
     )
 
     return base
@@ -142,9 +139,6 @@ export function Palette() {
           break
         case 'clear':
           if (sessionId) clearBuffer(sessionId)
-          break
-        case 'appearance':
-          toggleAppearance(true)
           break
         case 'settings':
           openSettings()

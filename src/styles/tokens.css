@@ -40,7 +40,7 @@
    * near-black surface, which silently assumes the accent is *lighter* than the
    * page. The five shipped identities all are, so the assumption held until the
    * colour picker made an arbitrary colour one click away. Set black and the
-   * whole interface dissolves: `--bd` becomes oklch(0 0 0) at 26% over #07090d,
+   * whole interface dissolves: `--bd` becomes oklch(0 0 0) at 36% over #07090d,
    * which is nothing at all.
    *
    * 0.62 is the floor for structure — enough for a hairline to read against the
@@ -94,8 +94,8 @@
   --on-ac: var(--page);
 
   /* --- Hairlines and fills, all accent-derived ---------------------------- */
-  --bd: color-mix(in oklch, var(--ac) 26%, transparent);
-  --bd2: color-mix(in oklch, var(--ac) 13%, transparent);
+  --bd: color-mix(in oklch, var(--ac) 36%, transparent);
+  --bd2: color-mix(in oklch, var(--ac) 23%, transparent);
   --wash: color-mix(in oklch, var(--ac) 8%, transparent);
   --wash2: color-mix(in oklch, var(--ac) 3.5%, transparent);
 

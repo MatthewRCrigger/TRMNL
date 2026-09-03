@@ -17,6 +17,7 @@ import {
   isValidColor,
   type CommandAccent,
 } from '../lib/commandAccent'
+import { withIntensity } from '../lib/color'
 import {
   resolveKeybindings,
   sanitizeKeybindingOverrides,
@@ -57,6 +58,26 @@ export const IDENTITIES: Identity[] = [
 /** The default identity. Must match the `--ac` fallback in tokens.css. */
 export const DEFAULT_IDENTITY =
   IDENTITIES.find((i) => i.name === 'USER') ?? IDENTITIES[0]!
+
+/**
+ * The intensity slider's range, as a chroma multiplier — see `withIntensity`.
+ * 1 is unmodified. MIN goes low enough to read as visibly greyed without
+ * hitting exactly 0 (a slider that can zero out the accent entirely would
+ * make "duller" indistinguishable from "off," which is a different feature).
+ *
+ * MAX went through two rounds: 1.8 was chosen against `oklchToHex`'s gamut
+ * clip, back when "brighter" only scaled chroma — past that, the swatch
+ * genuinely stopped changing. But most of the interface is hairlines and
+ * washes as faint as 3.5% `color-mix` (`--bd`, `--wash`, …), where chroma
+ * barely registers and what those need is more lightness reaching `--ac`'s
+ * 0.62 floor. `withIntensity` now raises L too above 1, which has real
+ * headroom (clamps at 1.0, not a gamut edge), so 1.8 stopped being enough —
+ * bright still meant "USER's own swatch looks a little more saturated," not
+ * "the borders around every panel stop blending into the page."
+ */
+export const INTENSITY_MIN = 0.4
+export const INTENSITY_MAX = 2.6
+export const INTENSITY_DEFAULT = 1
 
 export interface Profile {
   id: string
@@ -144,6 +165,16 @@ export interface Session {
 export interface Settings {
   accent: string
   identityName: string
+  /**
+   * Chroma multiplier applied on top of whichever accent is active —
+   * identity, profile, or a running command's — so "USER looks a bit dim" is
+   * a slider rather than a colour re-pick. See `withIntensity`; range is
+   * `INTENSITY_MIN`..`INTENSITY_MAX`, 1 unmodified, above 1 more vivid. Kept
+   * separate from `accent` itself: the five shipped identities stay their
+   * exact swatch values, and `pickSettings` can keep validating `accent`
+   * against them unchanged.
+   */
+  intensity: number
   density: Density
   foldThreshold: number
   renderers: Record<RendererId, boolean>
@@ -192,7 +223,6 @@ interface StoreState {
 
   /* overlays */
   palette: { open: boolean; query: string; activeIndex: number }
-  appearance: { open: boolean }
   settings: { open: boolean; tab: SettingsTab; selectedProfile: string | null }
   search: { open: boolean; query: string; activeIndex: number }
   /**
@@ -229,7 +259,6 @@ interface StoreState {
   moveSearchSelection: (delta: number, max: number) => void
   setSearchIndex: (i: number) => void
 
-  toggleAppearance: (open?: boolean) => void
   openSettings: (tab?: SettingsTab) => void
   closeSettings: () => void
   setSettingsTab: (tab: SettingsTab) => void
@@ -309,6 +338,7 @@ export type SettingsTab = 'profiles' | 'appearance' | 'behavior' | 'keybindings'
 export const DEFAULT_SETTINGS: Settings = {
   accent: DEFAULT_IDENTITY.value,
   identityName: DEFAULT_IDENTITY.name,
+  intensity: INTENSITY_DEFAULT,
   density: 'normal',
   foldThreshold: 9,
   renderers: { build: true, git: true, serve: true, err: true, list: true, test: true },
@@ -622,7 +652,6 @@ export const useStore = create<StoreState>((set, get) => ({
   paneMaximized: false,
 
   palette: { open: false, query: '', activeIndex: 0 },
-  appearance: { open: false },
   settings: { open: false, tab: 'profiles', selectedProfile: null },
   search: { open: false, query: '', activeIndex: 0 },
   closeConfirm: null,
@@ -831,9 +860,6 @@ export const useStore = create<StoreState>((set, get) => ({
     }),
   setSearchIndex: (i) => set((s) => ({ search: { ...s.search, activeIndex: i } })),
 
-  toggleAppearance: (open) =>
-    set((s) => ({ appearance: { open: open ?? !s.appearance.open } })),
-
   openSettings: (tab) =>
     set((s) => ({
       settings: {
@@ -842,7 +868,6 @@ export const useStore = create<StoreState>((set, get) => ({
         tab: tab ?? s.settings.tab,
         selectedProfile: s.settings.selectedProfile ?? s.profiles[0]?.id ?? null,
       },
-      appearance: { open: false },
     })),
   closeSettings: () => set((s) => ({ settings: { ...s.settings, open: false } })),
   setSettingsTab: (tab) => set((s) => ({ settings: { ...s.settings, tab } })),
@@ -894,7 +919,9 @@ export const useStore = create<StoreState>((set, get) => ({
     if (sweeping) {
       // The nonce makes a rapid re-switch remount the element rather than queue
       // behind the one in flight, so five fast switches land on the fifth colour.
-      set({ identitySweep: { id: sweepNonce++, color: next.accent } })
+      // Carries the intensity adjustment too, so the band shows the colour that
+      // is actually about to land rather than the unadjusted identity value.
+      set({ identitySweep: { id: sweepNonce++, color: withIntensity(next.accent, next.intensity) } })
     }
   },
 
@@ -1384,6 +1411,10 @@ export function pickSettings(stored: Partial<Settings> | undefined): Settings {
     // edited config cannot leave the UI with an unusable colour.
     accent: identity?.value ?? DEFAULT_SETTINGS.accent,
     identityName: identity?.name ?? DEFAULT_SETTINGS.identityName,
+    intensity:
+      typeof stored.intensity === 'number' && Number.isFinite(stored.intensity)
+        ? Math.min(INTENSITY_MAX, Math.max(INTENSITY_MIN, stored.intensity))
+        : DEFAULT_SETTINGS.intensity,
     density: density.includes(stored.density as Density)
       ? (stored.density as Density)
       : DEFAULT_SETTINGS.density,
@@ -1516,7 +1547,12 @@ function applyTheme(settings: Settings, override?: string | null): void {
   // floor, so a colour too dark to see becomes visible rather than dissolving
   // every hairline. Setting --ac here would overwrite that derivation and skip
   // the floor entirely.
-  root.style.setProperty('--ac-raw', override ?? settings.accent)
+  //
+  // The intensity slider nudges whichever colour that is — override or
+  // identity alike — rather than only the stored identity value, so "this
+  // command's colour is a bit dim" is fixable the same way as "USER is a bit
+  // dim" instead of only the latter.
+  root.style.setProperty('--ac-raw', withIntensity(override ?? settings.accent, settings.intensity))
   root.dataset.density = settings.density
 }
 

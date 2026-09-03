@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_IDENTITY, IDENTITIES, pickSettings, profileAccent, type Profile } from './store'
+import {
+  DEFAULT_IDENTITY,
+  IDENTITIES,
+  INTENSITY_DEFAULT,
+  INTENSITY_MAX,
+  INTENSITY_MIN,
+  pickSettings,
+  profileAccent,
+  type Profile,
+} from './store'
 
 describe('pickSettings', () => {
   it('defaults to the USER identity', () => {
@@ -29,6 +38,7 @@ describe('pickSettings', () => {
       'foldThreshold',
       'ghostSource',
       'identityName',
+      'intensity',
       'keybindings',
       'renderers',
       'restoreOnLaunch',
@@ -61,6 +71,20 @@ describe('pickSettings', () => {
     expect(pickSettings({ foldThreshold: 900 } as never).foldThreshold).toBe(60)
     expect(pickSettings({ foldThreshold: -5 } as never).foldThreshold).toBe(3)
     expect(pickSettings({ foldThreshold: 12 } as never).foldThreshold).toBe(12)
+  })
+
+  it('defaults intensity to unmodified and clamps it to the slider range', () => {
+    expect(pickSettings(undefined).intensity).toBe(INTENSITY_DEFAULT)
+    expect(pickSettings({ intensity: 5 } as never).intensity).toBe(INTENSITY_MAX)
+    expect(pickSettings({ intensity: -5 } as never).intensity).toBe(INTENSITY_MIN)
+    expect(pickSettings({ intensity: 1.2 } as never).intensity).toBe(1.2)
+  })
+
+  it('falls back to unmodified for a non-numeric intensity', () => {
+    // A hand-edited config might carry a string or NaN; either would break
+    // the oklch arithmetic in withIntensity rather than being clamped by it.
+    expect(pickSettings({ intensity: 'bright' } as never).intensity).toBe(INTENSITY_DEFAULT)
+    expect(pickSettings({ intensity: NaN } as never).intensity).toBe(INTENSITY_DEFAULT)
   })
 
   it('rejects out-of-band enum values', () => {

@@ -131,6 +131,7 @@
 .statusbar__clock {
   margin-left: auto;
   white-space: nowrap;
+  color: var(--act);
 }
 
 .frame__sink {
@@ -141,9 +142,9 @@
 
 /* Identity sweep: a band of the incoming accent crossing the window once. Sits
  * above content but below .search (95) and the modal overlays (100/101), so a
- * switch made from the Appearance popover passes behind the popover that
- * triggered it. Never interactive — a 250ms layer that ate a click would be a
- * bug the user could not explain. */
+ * switch made in the settings panel passes behind the panel that triggered it.
+ * Never interactive — a 250ms layer that ate a click would be a bug the user
+ * could not explain. */
 .frame__sweep {
   position: absolute;
   inset: 0;
@@ -252,7 +253,7 @@
 .titlebar__palette:hover { border-color: var(--ac); }
 .titlebar__palette:hover .titlebar__palettetext { color: var(--act); }
 
-.titlebar__identity {
+.titlebar__settings {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -267,7 +268,7 @@
   transition: border-color 0.16s, color 0.16s;
 }
 
-.titlebar__identity:hover { border-color: var(--bd); color: var(--act); }
+.titlebar__settings:hover { border-color: var(--bd); color: var(--act); }
 
 .titlebar__swatch {
   width: 11px;
@@ -523,11 +524,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 45%;
-}
-
-.takeover__hint {
-  flex: none;
-  color: var(--fgdd);
 }
 
 /* Full terminal renderer, shown while an interactive program owns the screen. */
@@ -1224,8 +1220,6 @@
   overflow: hidden;
 }
 
-.composer__typed { color: var(--fg); }
-
 /* Reserves exactly the width of the typed text so the ghost begins in the right
  * column. Invisible — the visible copy is the real input, sitting on top. */
 .composer__spacer { color: transparent; }
@@ -1524,66 +1518,6 @@
   color: var(--fgdd);
 }
 
-/* --- Appearance popover --------------------------------------------------- */
-
-.popover__backdrop { position: absolute; inset: 0; z-index: 100; }
-
-.popover {
-  position: absolute;
-  top: 48px;
-  right: 12px;
-  z-index: 101;
-  width: 276px;
-  background: color-mix(in oklch, var(--card) 94%, transparent);
-  border: 1px solid var(--bd);
-  box-shadow: 0 24px 60px -12px #000;
-  backdrop-filter: blur(10px);
-}
-
-.popover__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--bd2);
-}
-
-.popover__kbd {
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  color: var(--act);
-}
-
-.popover__section {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--bd2);
-}
-
-.popover__label { margin-bottom: 9px; }
-
-.popover__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.popover__all {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 11px 14px;
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: var(--t-label);
-  letter-spacing: 0.16em;
-  color: var(--fgd);
-  transition: color 0.16s, background 0.16s;
-}
-
-.popover__all:hover { color: var(--act); background: var(--wash2); }
-.popover__arrow { color: var(--act); }
-
 /* --- Swatches ------------------------------------------------------------- */
 
 .swatches {
@@ -1652,6 +1586,76 @@
 .segmented__seg:hover { color: var(--act); }
 
 .segmented--auto .segmented__seg { padding: 7px 14px; }
+
+/* --- Intensity slider ------------------------------------------------------ */
+
+.intensity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 74%;
+}
+
+.intensity__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.intensity__end {
+  color: var(--fgdd);
+  letter-spacing: 0.14em;
+  flex: none;
+}
+
+/* A bare <input type="range">, restyled: track and thumb are the only parts a
+ * webview lets CSS reach, and both are drawn in accent tones so the control
+ * reads as part of the same system as the swatches above it rather than a
+ * native system widget dropped into the page. */
+.intensity__range {
+  flex: 1;
+  height: 16px;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.intensity__range::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--bd2);
+}
+
+.intensity__range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -6px;
+  background: var(--ac);
+  outline: 1px solid var(--page);
+  outline-offset: -1px;
+  transition: box-shadow 0.16s;
+}
+
+.intensity__range:hover::-webkit-slider-thumb,
+.intensity__range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 10px -1px var(--ac);
+}
+
+.intensity__range:focus-visible { outline: none; }
+
+.intensity__reset {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  color: var(--fgdd);
+  flex: none;
+  transition: color 0.16s;
+}
+
+.intensity__reset:hover { color: var(--act); }
 
 /* --- Toggle --------------------------------------------------------------- */
 
@@ -1822,6 +1826,37 @@
 }
 
 .settings__pane--profiles { display: flex; padding: 0; }
+
+/* "Add" buttons — a dashed outline reads as a placeholder waiting to be filled,
+ * which is what these create. The rules were dropped with the session rail they
+ * were first written for while three buttons kept the class, so they sat
+ * unstyled; the widths below are the settings pane's rather than the rail's. */
+.dashed {
+  display: block;
+  width: 100%;
+  padding: 7px;
+  border: 1px dashed var(--ac);
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: var(--t-label);
+  letter-spacing: 0.16em;
+  color: var(--act);
+  background: transparent;
+  transition: color 0.16s, border-color 0.16s, background-color 0.16s;
+}
+
+.dashed:hover {
+  color: var(--on-ac);
+  background: var(--ac);
+  border-color: var(--on-ac);
+}
+
+/* Sits in a row with other controls rather than spanning the pane. */
+.dashed--inline {
+  width: auto;
+  margin: 8px 0 0;
+  padding: 6px 12px;
+}
 
 .settings__section { margin-bottom: 24px; }
 
@@ -2543,7 +2578,6 @@
 .frame,
 .palette,
 .settings,
-.popover,
 .search,
 .takeover__panel {
   box-shadow:
@@ -2555,7 +2589,6 @@
  * dimmed backdrop that already separates them. */
 .palette,
 .settings,
-.popover,
 .search {
   box-shadow:
     inset 0 0 0 1px color-mix(in oklch, var(--ac) 5%, transparent),

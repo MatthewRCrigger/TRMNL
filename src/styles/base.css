@@ -151,10 +151,6 @@ input {
   box-shadow: 0 0 5px currentColor;
 }
 
-.dot--pulse {
-  animation: pul 1.4s ease-in-out infinite;
-}
-
 /* A hairline that fills remaining space in a header row. */
 .rule {
   flex: 1;
@@ -173,10 +169,11 @@ input {
 
 /* --- Drag regions --------------------------------------------------------- */
 
-.drag {
-  -webkit-app-region: drag;
-}
-
+/* There is deliberately no `.drag` counterpart: `-webkit-app-region` is an
+ * Electron feature and does nothing in a Tauri webview, so a class granting
+ * drag would silently not work. Dragging is opted *into* with
+ * `data-tauri-drag-region` on the element that receives the event — see the
+ * TitleBar. This rule is kept only because the markup still carries the class. */
 .no-drag {
   -webkit-app-region: no-drag;
 }

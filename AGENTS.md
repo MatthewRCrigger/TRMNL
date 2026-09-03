@@ -32,7 +32,7 @@ Three tokens, and picking the wrong one is a real bug:
   washes, fills, borders.
 - `--act` — floored to 0.7. **Text only.**
 
-The floors exist because every hairline is the accent at ~26% opacity over a
+The floors exist because every hairline is the accent at ~36% opacity over a
 near-black page, which silently assumes the accent is lighter than the page. The
 five shipped identities all are; an arbitrary picked colour is not. Setting black
 used to dissolve the interface entirely.

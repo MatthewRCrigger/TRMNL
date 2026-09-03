@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { anyColorToHex, formatOklch, hexToOklch, oklchToHex, parseOklch } from './color'
+import { anyColorToHex, formatOklch, hexToOklch, oklchToHex, parseOklch, withIntensity } from './color'
 
 describe('hexToOklch', () => {
   it('maps the sRGB anchors', () => {
@@ -138,5 +138,68 @@ describe('anyColorToHex', () => {
     // The caller falls back to a default rather than opening the picker on junk.
     expect(anyColorToHex('')).toBeNull()
     expect(anyColorToHex('   ')).toBeNull()
+  })
+})
+
+describe('withIntensity', () => {
+  it('scales chroma up for a multiplier above 1, and leaves hue alone', () => {
+    const brighter = parseOklch(withIntensity('oklch(0.75 0.18 152)', 1.5))!
+    expect(brighter.c).toBeCloseTo(0.27, 5)
+    expect(brighter.h).toBe(152)
+  })
+
+  it('scales chroma down for a multiplier below 1', () => {
+    const duller = parseOklch(withIntensity('oklch(0.75 0.18 152)', 0.5))!
+    expect(duller.c).toBeCloseTo(0.09, 5)
+  })
+
+  it('is a no-op at 1, short of reformatting the input', () => {
+    expect(withIntensity('oklch(0.75 0.18 152)', 1)).toBe('oklch(0.75 0.18 152)')
+  })
+
+  it('makes a pale, low-chroma identity visibly more saturated', () => {
+    // This is the case that motivated the feature: USER is l:0.93 c:0.045,
+    // already nearly white, so raising *its own* lightness has nowhere left
+    // to push it. Turning the chroma up is what actually reads as "brighter"
+    // on the swatch itself.
+    const user = parseOklch(withIntensity('oklch(0.93 0.045 220)', 1.8))!
+    expect(user.c).toBeGreaterThan(0.045)
+  })
+
+  it('also raises lightness above 1, for the sake of --ac and its derived hairlines', () => {
+    // Most of the interface never shows --ac-raw directly — --bd, --wash and
+    // friends are --ac (--ac-raw floored to l:0.62) blended as low as 3.5%
+    // over near-black, where chroma barely survives the blend and lightness
+    // is what actually lifts a hairline off the page. That floor is computed
+    // in CSS from whatever --ac-raw carries, so lifting L here is the one way
+    // this function has to brighten those tokens too.
+    const base = parseOklch('oklch(0.93 0.045 220)')!
+    const brighter = parseOklch(withIntensity('oklch(0.93 0.045 220)', 1.8))!
+    expect(brighter.l).toBeGreaterThan(base.l)
+  })
+
+  it('leaves lightness alone when duller, so it reads as desaturated rather than darker', () => {
+    const base = parseOklch('oklch(0.75 0.18 152)')!
+    const duller = parseOklch(withIntensity('oklch(0.75 0.18 152)', 0.5))!
+    expect(duller.l).toBe(base.l)
+  })
+
+  it('clamps rather than emitting an out-of-range L or a negative C', () => {
+    expect(parseOklch(withIntensity('oklch(0.95 0.2 25)', 2.6))!.l).toBeLessThanOrEqual(1)
+    expect(parseOklch(withIntensity('oklch(0.05 0.02 25)', 0.4))!.c).toBeGreaterThanOrEqual(0)
+  })
+
+  it('adjusts a hex accent the same way, round-tripping through oklch', () => {
+    // Profile and command-rule colours are not always authored as oklch;
+    // withIntensity has to handle whatever notation reaches --ac-raw. Only
+    // loose precision is expected here: formatOklch rounds to 3 decimals, and
+    // the hex round trip through sRGB costs a little more on top of that.
+    const base = hexToOklch('#3fa9f5')!
+    const nudged = parseOklch(withIntensity('#3fa9f5', 1.5))!
+    expect(nudged.c).toBeCloseTo(base.c * 1.5, 2)
+  })
+
+  it('passes an unparseable colour straight through', () => {
+    expect(withIntensity('not-a-colour', 1.5)).toBe('not-a-colour')
   })
 })

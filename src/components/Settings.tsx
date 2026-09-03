@@ -16,9 +16,19 @@ import {
   type ActionId,
 } from '../lib/keybindings'
 import { ColorField } from './ColorField'
-import { IDENTITIES, useStore, type Density, type GhostSource, type Profile, type SettingsTab } from '../state/store'
+import {
+  IDENTITIES,
+  INTENSITY_DEFAULT,
+  INTENSITY_MAX,
+  INTENSITY_MIN,
+  useStore,
+  type Density,
+  type GhostSource,
+  type Profile,
+  type SettingsTab,
+} from '../state/store'
 import type { RendererId } from '../term/renderers'
-import { Toggle } from './Appearance'
+import { Toggle } from './Toggle'
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'profiles', label: 'PROFILES' },
@@ -445,7 +455,7 @@ function ProfileAccentField({
     <div className="paccent">
       <div className="paccent__picks">
         <button
-          className="paccent__pick paccent__pick--inherit"
+          className="paccent__pick"
           data-selected={inherits}
           onClick={() => patch({ accent: undefined })}
           type="button"
@@ -572,6 +582,10 @@ function AppearancePane() {
         </div>
       </Section>
 
+      <Section label="INTENSITY">
+        <IntensitySlider intensity={settings.intensity} onChange={(intensity) => updateSettings({ intensity })} />
+      </Section>
+
       <Section label="DENSITY">
         <div className="segmented segmented--auto">
           {DENSITIES.map((density) => (
@@ -609,6 +623,55 @@ function AppearancePane() {
 
 function shortOklch(value: string): string {
   return value.replace(/0\./g, '.')
+}
+
+/**
+ * Duller/brighter, as an oklch chroma multiplier on top of whatever accent is
+ * active — identity, profile, or a running command's. Chroma rather than
+ * lightness: USER is already l:0.93 with barely any saturation, so a
+ * lightness-only slider has nowhere left to push it and "USER looks dim"
+ * would stay unfixable. See `withIntensity`.
+ *
+ * A native range input rather than a custom drag surface: this is a plain
+ * linear scrubber, and the browser's own gives keyboard and scroll-wheel
+ * support for free.
+ *
+ * DULLER/BRIGHTER labels rather than a numeric readout: the stored value is a
+ * multiplier that means nothing on its own, and the swatches above already
+ * show the colour this is adjusting.
+ */
+function IntensitySlider({
+  intensity,
+  onChange,
+}: {
+  intensity: number
+  onChange: (intensity: number) => void
+}) {
+  const atDefault = intensity === INTENSITY_DEFAULT
+
+  return (
+    <div className="intensity">
+      <div className="intensity__row">
+        <span className="micro intensity__end">DULLER</span>
+        <input
+          className="intensity__range"
+          type="range"
+          min={INTENSITY_MIN}
+          max={INTENSITY_MAX}
+          step={0.02}
+          value={intensity}
+          onChange={(e) => onChange(Number(e.target.value))}
+          aria-label="Accent intensity"
+        />
+        <span className="micro intensity__end">BRIGHTER</span>
+      </div>
+      {!atDefault && (
+        <button className="intensity__reset" onClick={() => onChange(INTENSITY_DEFAULT)} type="button">
+          RESET
+        </button>
+      )}
+    </div>
+  )
 }
 
 /** A blank rule starts disabled: an empty `match` matches nothing, and an empty

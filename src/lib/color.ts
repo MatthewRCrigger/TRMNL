@@ -158,3 +158,53 @@ export function parseOklch(value: string): Oklch | null {
   if ([l, c, h].some(Number.isNaN)) return null
   return { l, c, h }
 }
+
+/**
+ * Any CSS colour → oklch, for adjusting a colour the caller did not choose the
+ * notation of. `oklch(...)` is parsed directly, so a round trip through hex
+ * cannot cost it precision; everything else goes through the hex bridge, which
+ * is `anyColorToHex`'s job already.
+ */
+function anyColorToOklch(value: string): Oklch | null {
+  const direct = parseOklch(value)
+  if (direct) return direct
+  const hex = anyColorToHex(value)
+  return hex ? hexToOklch(hex) : null
+}
+
+/**
+ * Scale a colour's chroma by `intensity`, a multiplier typically in roughly
+ * 0.4..2.6 — this is the "duller/brighter" slider. "Brighter" here means more
+ * vivid, not more lightness on the swatch itself: USER is
+ * `oklch(0.93 0.045 220)`, already almost white at l:0.93, so raising *its*
+ * L cannot make it read as less washed-out — it only pushes it further
+ * toward white. What reads as dim there is the low chroma.
+ *
+ * But most of the interface never shows `--ac-raw` directly — tokens.css
+ * turns it into hairlines and washes as low as 3.5% `color-mix` over
+ * near-black (`--bd`, `--bd2`, `--wash`, `--wash2`), and at that opacity a
+ * colour's *lightness* is most of what survives; a few points of chroma is
+ * too small a change in the blended pixel to see. Those tokens key off `--ac`
+ * — `--ac-raw` floored to l:0.62 in CSS — not `--ac-raw` itself, so the one
+ * lever this function has for them is raising the lightness it hands to that
+ * floor. Above 1, this pushes L up alongside chroma for exactly that reason;
+ * the swatches and filled buttons brighten a little as a side effect, but the
+ * hairlines are the thing an all-chroma version of this left too dim to read
+ * against the page.
+ *
+ * Below 1 (duller), only chroma moves, toward grey; a lightness push there
+ * would read as darkening rather than dulling, which is a different slider.
+ *
+ * Returns the input unchanged (as oklch) when it cannot be parsed, and always
+ * clamps back into range so an extreme slider position cannot emit an invalid
+ * `--ac-raw`.
+ */
+export function withIntensity(value: string, intensity: number): string {
+  const base = anyColorToOklch(value)
+  if (!base) return value
+  if (intensity === 1) return formatOklch(base)
+
+  const c = Math.max(0, base.c * intensity)
+  const l = intensity > 1 ? clamp01(base.l + 0.12 * (intensity - 1)) : base.l
+  return formatOklch({ ...base, l, c })
+}

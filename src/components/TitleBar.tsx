@@ -21,7 +21,7 @@ export function TitleBar() {
   const toggleSplit = useStore((s) => s.toggleSplit)
   const closePane = useStore((s) => s.closePane)
   const openPalette = useStore((s) => s.openPalette)
-  const toggleAppearance = useStore((s) => s.toggleAppearance)
+  const openSettings = useStore((s) => s.openSettings)
   const identityName = useStore((s) => s.settingsValues.identityName)
   const accent = useStore((s) => s.settingsValues.accent)
 
@@ -71,13 +71,17 @@ export function TitleBar() {
         <span className="kbd">⌘K</span>
       </button>
 
+      {/* The swatch stays because it is the only live accent readout in the
+          chrome, and its colour still names the identity the panel opens on. */}
       <button
-        className="titlebar__identity no-drag"
-        onClick={() => toggleAppearance()}
+        className="titlebar__settings no-drag"
+        onClick={() => openSettings('appearance')}
+        title={`Settings — identity ${identityName}`}
+        aria-label={`Settings — identity ${identityName}`}
         type="button"
       >
         <span className="titlebar__swatch" style={{ background: accent }} />
-        {identityName}
+        SETTINGS
       </button>
     </div>
   )
