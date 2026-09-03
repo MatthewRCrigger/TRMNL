@@ -11,7 +11,7 @@
  * vanished against the page.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
   Alert,
@@ -37,16 +37,22 @@ import {
   Wordmark,
 } from '../components/grid'
 import { Block } from '../components/Block'
+import { Settings } from '../components/Settings'
 import { Structured } from '../components/Structured'
-import { DEFAULT_PANEL } from '../state/store'
+import { useStore } from '../state/store'
 import type { Block as BlockModel, Structured as StructuredData } from '../term/types'
 
 const noop = () => {}
 
 export function Harness() {
+  // Read the live panel settings, not the frozen defaults: the point of having
+  // Settings in here is that changing a toggle visibly redraws the blocks
+  // behind it, and a constant would quietly break that.
+  const panel = useStore((s) => s.settingsValues.panel)
   const [checked, setChecked] = useState(true)
   const [stepper, setStepper] = useState(4)
   const [dialog, setDialog] = useState(false)
+  const [settings, setSettings] = useState(false)
   const [tab, setTab] = useState('stream')
   const [nav, setNav] = useState('panels')
 
@@ -181,7 +187,7 @@ export function Harness() {
                 block={b}
                 foldThreshold={9}
                 isLatest={i === BLOCKS.length - 1}
-                panel={DEFAULT_PANEL}
+                panel={panel}
                 rawDumpThreshold={10_000}
                 cwd="~/dev/crggr-ops"
                 user="matt"
@@ -247,6 +253,7 @@ export function Harness() {
                   ariaLabel="Corner"
                 />
                 <Button variant="secondary" onClick={() => setDialog(true)}>OPEN DIALOG</Button>
+                <Button variant="secondary" onClick={() => setSettings(true)}>OPEN SETTINGS</Button>
               </div>
               <div className="hx__row">
                 {(['x', 'check', 'plus', 'minus', 'globe', 'external-link', 'triangle-alert', 'power'] as const).map(
@@ -451,6 +458,10 @@ export function Harness() {
         />
       </Frame>
 
+      {/* The real Settings dialog, driven through the real store. It reads
+          nothing from Tauri, so it renders here as it does in the app. */}
+      {settings && <SettingsHost onClose={() => setSettings(false)} />}
+
       <Dialog
         open={dialog}
         onClose={() => setDialog(false)}
@@ -471,6 +482,25 @@ export function Harness() {
       </Dialog>
     </div>
   )
+}
+
+/** Opens the real Settings dialog by writing the store, and closes on unmount. */
+function SettingsHost({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const store = useStore.getState()
+    store.openSettings('panels')
+    // The dialog closes itself through the store; mirror that back to the
+    // harness so the button state and the store cannot disagree.
+    const unsub = useStore.subscribe((s) => {
+      if (!s.settings.open) onClose()
+    })
+    return () => {
+      unsub()
+      useStore.getState().closeSettings()
+    }
+  }, [onClose])
+
+  return <Settings />
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
