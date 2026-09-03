@@ -344,7 +344,45 @@ export function Harness() {
             </Panel>
           </Section>
 
-          <Section title="05 — ALERTS &amp; NAV">
+          <Section title="05 — SPLIT PANES">
+            {/* Depth does the work: the focused pane on --void with an amber
+                label and --ink-100 command, the unfocused one on --surface-1
+                with everything a step dimmer. The divider is ONE 1px line. */}
+            <div className="hx__panes">
+              <div className="pane" data-focused="true">
+                <header className="pane__head">
+                  <span className="pane__label">PANE .FOCUS</span>
+                  <span className="pane__cwd">~/dev/crggr-ops</span>
+                  <span className="pane__meta">⑂ main</span>
+                  <span className="leader" />
+                  <Badge tone="accent">FOCUSED</Badge>
+                </header>
+                <div className="hx__panebody">
+                  <Prompt user="matt" host="crggr-08" path="~" command="npm run dev" caret />
+                </div>
+              </div>
+
+              <div className="divider" data-dir="row" />
+
+              <div className="pane" data-focused="false">
+                <header className="pane__head">
+                  <span className="pane__label">PANE .IDLE</span>
+                  <span className="pane__cwd">~/dev/crggr-ops/docs</span>
+                  <span className="pane__meta pane__meta--remote">
+                    <Icon name="globe" size={12} />
+                    build-01
+                  </span>
+                  <span className="leader" />
+                  <Badge tone="neutral">IDLE</Badge>
+                </header>
+                <div className="hx__panebody">
+                  <Prompt user="matt" host="build-01" path="~" command="tail -f app.log" tone="live" />
+                </div>
+              </div>
+            </div>
+          </Section>
+
+          <Section title="06 — ALERTS &amp; NAV">
             <Alert
               tone="danger"
               title="SHELL NOT RUNNING"

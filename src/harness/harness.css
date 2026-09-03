@@ -90,3 +90,14 @@ body { background: var(--void); }
 .hx__composer .composer { border-top: none; }
 .hx__search { width: 420px; }
 .hx__grid-lines { display: flex; flex-direction: column; margin-bottom: 12px; }
+
+.hx__panes {
+  display: flex;
+  height: 180px;
+  border: var(--stroke-1) solid var(--line-400);
+  overflow: hidden;
+}
+
+.hx__panes .pane { flex: 1; }
+
+.hx__panebody { padding: 16px; }
