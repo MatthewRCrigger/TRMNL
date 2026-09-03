@@ -304,14 +304,17 @@
 }
 
 /* Reserved at all times so the header row never reflows as the pointer enters
- * or leaves the block. Only the opacity changes, and it is not transitioned —
- * this system transitions colour only. */
+ * or leaves the block. The reveal is an opacity flip, and it is explicitly NOT
+ * transitioned: this system transitions colour only, and `transition: none`
+ * here is load-bearing rather than a default — without it the element inherits
+ * `all`, which would animate the very property the motion rules forbid. */
 .block__actions {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   flex: none;
   opacity: 0;
+  transition: none;
 }
 
 .block:hover .block__actions,

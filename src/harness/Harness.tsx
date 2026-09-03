@@ -36,8 +36,10 @@ import {
   TerminalLine,
   Wordmark,
 } from '../components/grid'
+import { Block } from '../components/Block'
 import { Structured } from '../components/Structured'
-import type { Structured as StructuredData } from '../term/types'
+import { DEFAULT_PANEL } from '../state/store'
+import type { Block as BlockModel, Structured as StructuredData } from '../term/types'
 
 const noop = () => {}
 
@@ -168,6 +170,27 @@ export function Harness() {
               <TerminalLine gutter="9999">a ten-thousand-line scrollback dump gets no frame</TerminalLine>
               <TerminalLine gutter="10000">at all, rather than a frame per block.</TerminalLine>
             </Panel>
+          </Section>
+
+          {/* The real <Block>, driven by the real blockPanel mapping — so the
+              state → panel derivation is exercised rather than restated. */}
+          <Section title="01b — REAL BLOCK COMPONENT">
+            {BLOCKS.map((b, i) => (
+              <Block
+                key={b.id}
+                block={b}
+                foldThreshold={9}
+                isLatest={i === BLOCKS.length - 1}
+                panel={DEFAULT_PANEL}
+                rawDumpThreshold={10_000}
+                cwd="~/dev/crggr-ops"
+                user="matt"
+                host="crggr-08"
+                onCancel={noop}
+                onRerun={noop}
+                onToggleFold={noop}
+              />
+            ))}
           </Section>
 
           <Section title="02 — RENDERERS">
@@ -527,6 +550,31 @@ const ERR: StructuredData = {
   detail: 'npm ERR! Missing script: "tset"',
   suggestion: 'npm run test',
 }
+
+/** Blocks in every settled state, for the real <Block> component. */
+const BLOCKS: BlockModel[] = [
+  {
+    id: 'b1', seq: 12, cmd: 'git status --short', cwd: '~/dev/crggr-ops',
+    ts: '12:04:11', t0: 0, running: false, live: false, code: 0, ms: 240,
+    lines: [{ text: 'nothing to commit, working tree clean', tone: 'dim' }],
+    structured: null,
+  },
+  {
+    id: 'b2', seq: 13, cmd: 'npm run tset', cwd: '~/dev/crggr-ops',
+    ts: '12:07:44', t0: 0, running: false, live: false, code: 1, ms: 90,
+    lines: [], structured: ERR,
+  },
+  {
+    id: 'b3', seq: 14, cmd: 'npm run dev', cwd: '~/dev/crggr-ops',
+    ts: '12:08:02', t0: Date.now() - 161_000, running: true, live: true,
+    lines: [], structured: null,
+  },
+  {
+    id: 'b4', seq: 15, cmd: 'npm run build', cwd: '~/dev/crggr-ops',
+    ts: '12:06:02', t0: 0, running: false, live: false, code: 0, ms: 12_400,
+    lines: [], structured: BUILD,
+  },
+]
 
 const LIST: StructuredData = {
   kind: 'list',

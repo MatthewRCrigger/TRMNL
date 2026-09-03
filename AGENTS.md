@@ -9,7 +9,7 @@ changing how blocks, sessions or tokens work.
 
 ```bash
 npm run typecheck      # tsc --noEmit
-npm test               # vitest, ~220 tests
+npm test               # vitest, ~234 tests
 npm run test:rust      # cargo test --lib
 npm run app            # tauri dev, hot reload
 ```
@@ -72,6 +72,12 @@ display either shows a state or it doesn't. There is deliberately **not one
 The one blink in the build is xterm's own cursor, which is a real terminal
 cursor in a real emulator; the stillness rule governs chrome. `Prompt` draws a
 **static** block caret and `Badge` a **static** dot.
+
+`src/styles/tokens.test.ts` asserts all of this against the stylesheets — no
+keyframes, no unsanctioned shadow, no literal `font-size`, every tint fill at or
+below 0.16, and the four applied rows intact. It has already caught one real
+regression (an inherited `transition: all` that would have animated opacity), so
+when it fails, read it before working around it.
 
 ## Blocks are panels
 

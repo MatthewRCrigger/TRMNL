@@ -72,7 +72,10 @@ export function Welcome({ session, host, compact, started = false, panel, total,
       // session began. A filled header here would compete with the latest block
       // for the eye every time you scrolled to the top.
       headerFilled={false}
-      index={{ current: 0, total }}
+      // `000 | 047` once there is a stream to be at the top of. With no blocks
+      // yet the total is 0, and `000 | 000` reads as a broken counter rather
+      // than as an empty session — so the pair collapses to the position alone.
+      index={total > 0 ? { current: 0, total } : { current: 0 }}
       headerRight={
         <Badge tone="success" dot>
           ATTACHED
