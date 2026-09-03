@@ -721,7 +721,10 @@
   text-transform: uppercase;
 }
 
-/* Machine truth: the raw error, in mono and lowercase, under a capped title. */
+/* Machine truth: the raw error, in mono and lowercase, under a capped title.
+ *
+ * pre-wrap because the shell's own line breaks are part of what it said — a
+ * message and its detail are two lines in the terminal and must stay two here. */
 .galert__body {
   margin-top: var(--space-2);
   font-family: var(--font-mono);
@@ -730,6 +733,7 @@
   line-height: var(--leading-normal);
   color: var(--ink-200);
   user-select: text;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 

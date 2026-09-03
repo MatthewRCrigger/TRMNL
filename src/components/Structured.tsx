@@ -319,8 +319,19 @@ function ErrorOutput({
 }) {
   return (
     <div className="sx">
-      <Alert tone="danger" title={data.message} icon="triangle-alert">
-        {data.detail}
+      {/* The title is the app naming the condition — `COMMAND FAILED`, in the
+          chrome's uppercase voice. The parsed message is the *shell's* words
+          and belongs in the body with the detail, lowercase and in mono.
+          Passing it as the title uppercased it into Rajdhani, which put the
+          shell's own sentence in the app's voice: `UNKNOWN SCRIPT "TSET"`. */}
+      <Alert tone="danger" title="COMMAND FAILED" icon="triangle-alert">
+        {data.message}
+        {data.detail && (
+          <>
+            {'\n'}
+            {data.detail}
+          </>
+        )}
       </Alert>
 
       {data.suggestion && (
