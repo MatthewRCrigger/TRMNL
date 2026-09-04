@@ -1,15 +1,22 @@
-// Flatten the two Icon Composer layers into a single 1024px PNG that
+// Flatten the Icon Composer layers into a single 1024px PNG that
 // `tauri icon` can expand into the platform icon set.
 //
 // The .icon bundle is the source of truth and stays in the repo; this only
 // produces the raster Tauri needs, since Tauri cannot read .icon bundles.
+//
+// Layers are passed BOTTOM-FIRST and composited in that order, which is the
+// reverse of how icon.json lists them — that file is top-first, the way a
+// layers panel reads. The CRGGR.sh bundle has three (field, mark, accent)
+// where the old one had two, so this takes a variable number rather than a
+// fixed pair.
 
 import AppKit
 import Foundation
 
 let args = CommandLine.arguments
-guard args.count == 4 else {
-    FileHandle.standardError.write("usage: composite <field.png> <mark.png> <out.png>\n".data(using: .utf8)!)
+guard args.count >= 3 else {
+    FileHandle.standardError.write(
+        "usage: composite <layer-bottom.png> [<layer.png> …] <out.png>\n".data(using: .utf8)!)
     exit(2)
 }
 
@@ -21,29 +28,47 @@ func load(_ path: String) -> NSImage {
     return image
 }
 
-let field = load(args[1])
-let mark = load(args[2])
+let layerPaths = Array(args.dropFirst().dropLast())
+let outPath = args[args.count - 1]
+
 let side = 1024
 let size = NSSize(width: side, height: side)
+let rect = NSRect(origin: .zero, size: size)
 
-let output = NSImage(size: size)
-output.lockFocus()
+// An explicit bitmap rep rather than NSImage.lockFocus(), which adopts the
+// main display's backing scale and silently produces a 2048px file on a Retina
+// Mac. `tauri icon` would downsample it correctly, so the bug is invisible in
+// the output — but the size would depend on which machine ran the script, and
+// a 1024 contract that only holds on some hardware is not a contract.
+guard let rep = NSBitmapImageRep(
+    bitmapDataPlanes: nil,
+    pixelsWide: side, pixelsHigh: side,
+    bitsPerSample: 8, samplesPerPixel: 4,
+    hasAlpha: true, isPlanar: false,
+    colorSpaceName: .deviceRGB,
+    bytesPerRow: 0, bitsPerPixel: 0
+) else {
+    FileHandle.standardError.write("could not allocate bitmap\n".data(using: .utf8)!)
+    exit(1)
+}
+rep.size = size
 
-// Field first, then the mark composited over it — the layer order in icon.json
-// lists the mark first (top) and the field second (bottom).
-field.draw(in: NSRect(origin: .zero, size: size),
-           from: .zero, operation: .copy, fraction: 1.0)
-mark.draw(in: NSRect(origin: .zero, size: size),
-          from: .zero, operation: .sourceOver, fraction: 1.0)
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 
-output.unlockFocus()
+for (index, path) in layerPaths.enumerated() {
+    // The first layer is the opaque field, so it is copied rather than blended:
+    // it establishes the tile. Everything above it composites over.
+    load(path).draw(in: rect, from: .zero,
+                    operation: index == 0 ? .copy : .sourceOver, fraction: 1.0)
+}
 
-guard let tiff = output.tiffRepresentation,
-      let rep = NSBitmapImageRep(data: tiff),
-      let png = rep.representation(using: .png, properties: [:]) else {
+NSGraphicsContext.restoreGraphicsState()
+
+guard let png = rep.representation(using: .png, properties: [:]) else {
     FileHandle.standardError.write("could not encode png\n".data(using: .utf8)!)
     exit(1)
 }
 
-try png.write(to: URL(fileURLWithPath: args[3]))
-print("wrote \(args[3])")
+try png.write(to: URL(fileURLWithPath: outPath))
+print("wrote \(outPath) from \(layerPaths.count) layers")

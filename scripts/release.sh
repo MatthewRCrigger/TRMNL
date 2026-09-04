@@ -58,6 +58,11 @@ else
   exit 1
 fi
 
+# The installer background is a flat PNG, so anything written on it is a claim
+# the build cannot verify. Checked before the long build rather than after, so a
+# stale version costs seconds instead of a full sign-and-notarize round trip.
+./scripts/check-dmg-background.sh
+
 echo "==> Building and signing"
 # Tauri will warn here that it is "skipping app notarization, no APPLE_ID &
 # APPLE_PASSWORD ... found". That is expected and wanted. Notarizing the .app

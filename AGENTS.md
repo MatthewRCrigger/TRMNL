@@ -211,6 +211,20 @@ Bump the version in **all four** places or the app misreports itself:
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
 `src-tauri/Cargo.lock`.
 
+**Nothing that expires goes on the installer background.** It is a flat PNG
+(`src-tauri/dmg/`), so anything written on it is a claim the build cannot
+verify — and a baked-in version goes stale on the *next* release while the DMG
+still mounts and installs perfectly, which is the worst kind of wrong.
+`scripts/check-dmg-background.sh` OCRs the asset and fails the release on a
+mismatch; it runs before the build, so a stale asset costs seconds rather than a
+full sign-and-notarize round trip. Its icon coordinates also have to agree with
+`bundle.macOS.dmg` in `tauri.conf.json` — the artwork's corner notches frame
+the icon boxes, so a position change means re-exporting the background.
+
+The icon bundle is `crggr-sh.icon/` and Tauri cannot read it; regenerate the
+rasters with `scripts/composite-icon.swift`, which takes layers **bottom-first**
+(`icon.json` lists them top-first, the way a layers panel reads).
+
 **`bundle_dmg.sh` needs Automation permission.** It runs `osascript` to have
 Finder position icons in the mounted volume, and Tauri swallows the output, so a
 denied permission surfaces only as:

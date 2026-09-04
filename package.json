@@ -1,6 +1,6 @@
 {
   "name": "trmnl",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "description": "A TRON-inspired terminal for macOS, with a block-based command model.",
   "license": "MIT",
   "author": "Matthew Crigger",

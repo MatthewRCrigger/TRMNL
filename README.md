@@ -259,16 +259,63 @@ either, single hairlines only, or the screen turns to corduroy.
 
 ### App icon
 
-The source of truth is **`trmnl-icon.icon/`**, an Icon Composer bundle (two
-layers: a dark gradient field and the chevron-plus-cursor mark). Tauri cannot
-read `.icon` bundles, so the rasters under `src-tauri/icons/` are generated from
-it. To regenerate after editing the bundle:
+The source of truth is **`crggr-sh.icon/`**, an Icon Composer bundle of three
+layers, top-first: the amber brackets and `.sh` (accent), `CRGGR` in ink
+(mark), and an opaque `#060809` field. Nothing is drawn — the whole mark is the
+bracket lockup from the wordmark set in the system's own two families, which is
+what keeps it inside the rule forbidding a logotype, an emblem or an icon mark.
+
+**Glass is off**, along with shadow and translucency. `elevation.css` opens by
+saying nothing casts light onto anything else, and a specular sheen on the mark
+would be the first thing anyone sees disagreeing with that. If it ever reads
+dead beside Tahoe's own icons, the sanctioned fallback is `glass: true` on the
+**accent layer only** — never on the wordmark.
+
+The field is `#060809` rather than true black on purpose: it keeps a faint edge
+against a black dock instead of reading as a hole.
+
+Tauri cannot read `.icon` bundles, so the rasters under `src-tauri/icons/` are
+generated from it. To regenerate after editing the bundle — layers are passed
+**bottom-first**, the reverse of how `icon.json` lists them:
 
 ```bash
-swift scripts/composite-icon.swift trmnl-icon.icon/Assets/layer-1-field-1024.png trmnl-icon.icon/Assets/layer-2-mark-1024.png /tmp/icon.png
-sips -z 1024 1024 /tmp/icon.png --out src-tauri/icons/icon.png
+swift scripts/composite-icon.swift \
+  crggr-sh.icon/Assets/layer-1-field-1024.png \
+  crggr-sh.icon/Assets/layer-2-mark-1024.png \
+  crggr-sh.icon/Assets/layer-3-accent-1024.png \
+  src-tauri/icons/icon.png
 npx tauri icon src-tauri/icons/icon.png && rm -rf src-tauri/icons/android src-tauri/icons/ios
 ```
+
+The small-size treatments the icon spec calls for — dropping `.sh` at 64, and
+brackets plus the block caret at 32/16 — are **not yet authored**. They are
+different compositions rather than scaled versions of the 1024, so they need
+drawing separately; until then macOS downsamples the full lockup.
+
+### Installer
+
+`src-tauri/dmg/dmg-background.png` (and its `@2x`) is the volume background,
+wired up in `tauri.conf.json` under `bundle.macOS.dmg` along with the window
+size and both icon positions. The drop zones in the artwork are corner notches
+sitting just *outside* each 128px icon box, so they frame the icon rather than
+being covered by it — which means the coordinates in the config and the artwork
+have to agree:
+
+| Item | Position | Size |
+|---|---|---|
+| `TRMNL.app` | 160, 196 | 128 |
+| `Applications` alias | 480, 196 | 128 |
+
+The app's zone is amber and the Applications zone is `--line-300`: one is the
+thing you are moving, the other is where it goes.
+
+**Nothing that expires belongs on this artwork.** It is a flat PNG, so any
+claim written on it is one the build cannot check and nothing corrects — a
+version in particular goes stale on the *next* release, silently, while the DMG
+still mounts and installs perfectly. `scripts/check-dmg-background.sh` reads the
+image back with Vision and fails the release if it finds a version that is not
+the one being built; `release.sh` runs it before the build rather than after, so
+a stale asset costs seconds instead of a full sign-and-notarize round trip.
 
 ### Config
 
