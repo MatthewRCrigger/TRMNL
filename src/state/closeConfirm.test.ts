@@ -233,3 +233,31 @@ describe('closePane', () => {
     expect(useStore.getState().closeConfirm).toEqual({ kind: 'pane' })
   })
 })
+
+
+/* Escape resolution across layered overlays.
+ *
+ * Two things listen for Escape: the window's own handler, which resolves every
+ * overlay in a fixed priority order, and `Dialog`, so a dialog can never ship
+ * without a way out. Both sit on `window`, which is the trap — the three app
+ * dialogs pass `escapeHandledByWindow` and stay silent, because a dialog that
+ * also listened would close a *second* overlay from the same keypress.
+ */
+
+describe('escape priority', () => {
+  it('has the app dialogs defer to the window handler', async () => {
+    // A guard on the wiring rather than on the DOM: `stopPropagation` cannot
+    // stop a sibling listener on the same node, so if one of these three ever
+    // starts listening for itself, ⌘W over an open Settings would close the
+    // confirm *and* Settings with one Escape.
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+
+    for (const file of ['Settings.tsx', 'Palette.tsx', 'CloseConfirm.tsx']) {
+      const src = readFileSync(join(__dirname, '..', 'components', file), 'utf8')
+      expect(src, `${file} must defer Escape to the window handler`).toContain(
+        'escapeHandledByWindow',
+      )
+    }
+  })
+})

@@ -114,6 +114,24 @@ describe('blockPanel', () => {
     expect(blockPanel(makeBlock({ lines }), { ...opts, rawDumpThreshold: 80 }).showPanel).toBe(true)
   })
 
+  it('fires at a threshold a block can actually reach', () => {
+    // PtySession trims each block's lines *to* the scrollback cap, so
+    // `lines.length` can never exceed it. A threshold set at the cap would
+    // make this branch unreachable and every dump would keep its frame — the
+    // caller passes a fraction of the buffer for exactly this reason.
+    const cap = 10_000
+    const atCap = Array.from({ length: cap }, () => ({ text: 'x', tone: 'txt' as const }))
+
+    // The mistake: threshold === cap. A maximal block still counts as framed.
+    expect(blockPanel(makeBlock({ lines: atCap }), { ...opts, rawDumpThreshold: cap }).showPanel).toBe(
+      true,
+    )
+    // The fix: a threshold below the cap, which a real dump crosses.
+    expect(
+      blockPanel(makeBlock({ lines: atCap }), { ...opts, rawDumpThreshold: cap / 4 }).showPanel,
+    ).toBe(false)
+  })
+
   it('keeps the frame on structured output however long it is', () => {
     // Parsed output is the opposite of an unframed scrollback spill: it has
     // already been turned into a table.

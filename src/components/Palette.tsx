@@ -186,6 +186,7 @@ export function Palette() {
     <Dialog
       open={open}
       onClose={closePalette}
+      escapeHandledByWindow
       title="COMMAND .PALETTE"
       width={560}
       index={{ current: Math.min(activeIndex + 1, results.length), total: results.length }}

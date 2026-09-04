@@ -18,6 +18,17 @@ import { toneColor, type Tone } from './tone'
 interface Props {
   open: boolean
   onClose: () => void
+  /**
+   * Let the window's own Escape handler close this one instead.
+   *
+   * The app resolves Escape across every overlay in a fixed priority order
+   * (close-confirm → settings → palette → search), and a dialog that also
+   * listens would close a *second* overlay from the same keypress: both
+   * listeners sit on `window`, so `stopPropagation` cannot stop the sibling —
+   * that needs `stopImmediatePropagation`, which would then depend on which
+   * listener happened to register first. Deferring is the honest fix.
+   */
+  escapeHandledByWindow?: boolean
   /** `WORD .WORD`, uppercase. */
   title: string
   /** Recolours the frames, the title and the header border together. */
@@ -37,6 +48,7 @@ interface Props {
 export function Dialog({
   open,
   onClose,
+  escapeHandledByWindow = false,
   title,
   tone = 'neutral',
   width = 560,
@@ -48,19 +60,22 @@ export function Dialog({
   className,
   children,
 }: Props) {
-  // Escape closes. Registered here rather than in each caller so a dialog can
-  // never ship without it; the window's own handler owns the *priority* order
-  // between overlays, and stops the event before it reaches this one.
+  // Escape closes, so a dialog can never ship without it — unless the window's
+  // priority handler already owns this one, in which case listening here too
+  // would close two overlays with one keypress. See `escapeHandledByWindow`.
   useEffect(() => {
-    if (!open) return
+    if (!open || escapeHandledByWindow) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      event.stopPropagation()
+      // stopImmediatePropagation, not stopPropagation: any competing listener
+      // is on `window` too, and stopPropagation does not stop siblings on the
+      // same node.
+      event.stopImmediatePropagation()
       onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, escapeHandledByWindow])
 
   if (!open) return null
 

@@ -98,6 +98,7 @@ export function Settings() {
     <Dialog
       open={isOpen}
       onClose={closeSettings}
+      escapeHandledByWindow
       title="SETTINGS .PANELS"
       width={1000}
       flush

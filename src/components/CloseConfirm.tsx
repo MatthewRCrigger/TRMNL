@@ -25,6 +25,7 @@ export function CloseConfirm() {
     <Dialog
       open={!!pending}
       onClose={cancelClose}
+      escapeHandledByWindow
       title="CLOSE .SESSION"
       tone="danger"
       width={480}

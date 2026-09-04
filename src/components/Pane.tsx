@@ -32,6 +32,20 @@ export function Pane({ pane, showClose }: Props) {
   const foldThreshold = useStore((s) => s.settingsValues.foldThreshold)
   const panel = useStore((s) => s.settingsValues.panel)
   const scrollbackCap = useStore((s) => s.settingsValues.scrollbackCap)
+
+  /**
+   * Above this many lines a block stops being an addressable unit and becomes
+   * a scrollback spill, so it drops its frame entirely.
+   *
+   * Deliberately a fraction of the scrollback cap rather than the cap itself.
+   * `PtySession` trims each block's lines *to* the cap (see the slice in
+   * `session.ts`), so `lines.length` can never exceed it and a threshold set
+   * there would never fire — the raw-dump case would be unreachable and every
+   * dump would still get a frame. A quarter of the buffer is comfortably past
+   * "a command that printed a lot" while staying well inside what the session
+   * actually retains.
+   */
+  const rawDumpThreshold = Math.max(200, Math.floor(scrollbackCap / 4))
   const paneState = useStore((s) => s.panes[pane])
   const sessions = useStore((s) => s.sessions)
   const setFocus = useStore((s) => s.setFocus)
@@ -193,10 +207,7 @@ export function Pane({ pane, showClose }: Props) {
               foldThreshold={foldThreshold}
               isLatest={i === session.blocks.length - 1}
               panel={panel}
-              // A block only drops its frame once it is genuinely a scrollback
-              // dump rather than a command that printed a lot; the scrollback
-              // cap is the honest definition of "that much output".
-              rawDumpThreshold={scrollbackCap}
+              rawDumpThreshold={rawDumpThreshold}
               cwd={prettyPath(block.cwd, host?.home)}
               user={user}
               host={shortHost}

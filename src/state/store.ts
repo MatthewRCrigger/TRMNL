@@ -83,8 +83,9 @@ export interface Session {
    * native process-tree scan. Empty when nothing is running.
    *
    * This is how a chained tool is found: the typed command may be `bun run
-   * start` while the tool that matters is `shopify`, several levels down. See
-   * `accentFor` and `src-tauri/src/proctree.rs`.
+   * start` while the tool that matters is `shopify`, several levels down. The
+   * window title reads these to name what a session is occupied with. See
+   * `src-tauri/src/proctree.rs`.
    */
   tools: string[]
   /**
@@ -364,7 +365,7 @@ const nextSessionId = createSessionIds()
  * Shared by spawning and adopting: a re-attached session has to fold its output
  * into the store exactly as a fresh one does, and duplicating this was how the
  * two paths would quietly drift — an adopted session that stopped notifying, or
- * stopped picking up accents, with nothing to point at.
+ * stopped folding output into blocks, with nothing to point at.
  */
 /** Zustand's setter, as handed to the store creator. */
 type StoreSet = (
@@ -427,9 +428,9 @@ function sessionCallbacks(set: StoreSet, id: string): SessionCallbacks {
 /**
  * Poll the session's process tree while a command is running.
  *
- * Only polls when there is a running block with no accent yet: once a colour is
- * locked in, or nothing is running, there is nothing left to discover and the
- * scan would be pure overhead.
+ * The scan only reports anything while something is running, so the poll goes
+ * quiet — clearing `tools` once — the moment the last block settles, rather
+ * than continuing to describe a tree that has exited.
  */
 function startToolPoll(id: string): void {
   if (toolPolls.has(id)) return
@@ -868,9 +869,9 @@ export const useStore = create<StoreState>((set, get) => ({
           selectedProfile:
             s.settings.selectedProfile === id ? (profiles[0]?.id ?? null) : s.settings.selectedProfile,
         },
-        // Sessions launched from the deleted profile keep pointing at an id that
-        // no longer resolves, so their colour has to fall back to the identity
-        // rather than stay stuck on a profile that is gone.,
+        // Sessions launched from the deleted profile keep pointing at an id
+        // that no longer resolves. That is harmless: profileId is only read
+        // when respawning, and `newSession` falls back to the default profile.
       }
     })
     persist()
@@ -927,9 +928,8 @@ export const useStore = create<StoreState>((set, get) => ({
           active: s.panes.a.sessions.length,
         },
       }
-      // An adopted session has no profile — which one spawned it died with the
-      // page — so this resolves to the identity. It still has to run: the
-      // session it just became active over may have been carrying a colour.
+      // An adopted session has no profile — whichever one spawned it died with
+      // the page — so it inherits nothing and simply becomes the active tab.
       return { sessions, panes }
     })
 
