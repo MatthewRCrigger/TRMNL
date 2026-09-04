@@ -303,11 +303,18 @@ have to agree:
 
 | Item | Position | Size |
 |---|---|---|
-| `TRMNL.app` | 160, 196 | 128 |
+| `CRGGR.sh.app` | 160, 196 | 128 |
 | `Applications` alias | 480, 196 | 128 |
 
 The app's zone is amber and the Applications zone is `--line-300`: one is the
 thing you are moving, the other is where it goes.
+
+**The band under each icon stays empty.** Finder draws its own filename there
+(roughly y 260–290 for a 128px icon centred at 196) and the artwork cannot move
+it, so anything drawn in that band — a label, or a plate behind one — ends up
+smeared under the filename. `check-label-band.swift` measures it in pixels
+rather than matching text, because the wordmark in the header reads as
+"CRGGR.sh" to OCR exactly as a drop-zone label would.
 
 **Nothing that expires belongs on this artwork.** It is a flat PNG, so any
 claim written on it is one the build cannot check and nothing corrects — a
@@ -325,18 +332,29 @@ rather than the handoff's TOML: the frontend owns this blob's shape, and
 round-tripping nested UI state through TOML buys nothing. The Settings footer
 reflects whatever path the backend reports.
 
-## Still named TRMNL
+## The name
 
-The rebuild is scoped to the WebView half. The repository, the bundle
-identifier, `tauri.conf.json`'s `productName`, the DMG volume name, the `.icon`
-asset names and the config directory (`~/.config/trmnl/`) all still say TRMNL,
-and renaming them is a separate job with its own migration: a config directory
-that moves without one silently loses every profile a user has.
+The app ships as **CRGGR.sh** — `productName`, the bundle name, the window
+title, the macOS menu, the DMG volume and the icon label all say it, and the
+UI follows the wordmark rules: `CRGGR` in Rajdhani 600 at `.28em`, caps,
+`--ink-100`; `.sh` in Space Mono 400, lowercase, amber, at 0.75× the display
+size. Never set `.sh` in Rajdhani, never in caps, never in ink — it is the one
+lowercase thing in the chrome, and that is the point.
 
-The **UI** says CRGGR.sh throughout, per the wordmark rules — `CRGGR` in
-Rajdhani 600 at `.28em`, caps, `--ink-100`; `.sh` in Space Mono 400, lowercase,
-amber, at 0.75× the display size. Never set `.sh` in Rajdhani, never in caps,
-never in ink: it is the one lowercase thing in the chrome, and that is the point.
+Three things deliberately still say `trmnl`, and each would cost something real
+to change:
+
+| Still `trmnl` | Why it stays |
+|---|---|
+| bundle identifier `sh.grid.trmnl` | macOS keys TCC permissions and Gatekeeper history off it. Changing it makes this a *different* app: every permission re-prompts, and a user with the old build installed gets two apps rather than an upgrade. |
+| `~/.config/trmnl/` | Every profile, keybinding and workspace lives here. Moving it without a migration silently loses all of them. |
+| shell hooks (`trmnl.zsh`, `__trmnl_osc`, `TRMNL_INTEGRATION_LOADED`) | Wire protocol. A shell sourced by an older build is still running these names; renaming them breaks the OSC 133 boundary reporting in every open session. |
+
+`mainBinaryName` is `CRGGR`, not `CRGGR.sh`: it names the executable inside
+`Contents/MacOS`, where a dot reads as a file extension to some tooling. The
+bundle around it is still `CRGGR.sh.app`, which is what anyone sees.
+
+The **repository** is also still `TRMNL`, which is only a URL.
 
 ## Deviations from the prototype worth knowing
 

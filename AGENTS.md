@@ -211,7 +211,21 @@ Bump the version in **all four** places or the app misreports itself:
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
 `src-tauri/Cargo.lock`.
 
-**Nothing that expires goes on the installer background.** It is a flat PNG
+**The app is CRGGR.sh; three identifiers are still `trmnl` on purpose.** The
+bundle identifier `sh.grid.trmnl` (macOS keys TCC permissions and Gatekeeper
+history off it — changing it makes this a different app, not an upgrade),
+`~/.config/trmnl/` (every profile lives there; moving it without a migration
+loses them), and the shell hooks (`trmnl.zsh`, `__trmnl_osc`,
+`TRMNL_INTEGRATION_LOADED` — wire protocol that shells sourced by an older build
+are still running). Rename none of those casually. `mainBinaryName` is `CRGGR`
+rather than `CRGGR.sh` because a dot in `Contents/MacOS` reads as an extension.
+
+Build scripts derive the bundle name from `tauri.conf.json` rather than
+hardcoding it, so the next rename does not leave them pointing at a stale path.
+
+**Nothing that expires goes on the installer background,** and the band under
+each icon stays empty — Finder draws the filename there (y 260-290 for a 128px
+icon at 196) and the artwork cannot move it. It is a flat PNG
 (`src-tauri/dmg/`), so anything written on it is a claim the build cannot
 verify — and a baked-in version goes stale on the *next* release while the DMG
 still mounts and installs perfectly, which is the worst kind of wrong.

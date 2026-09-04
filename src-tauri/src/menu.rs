@@ -66,7 +66,7 @@ const EVENT_CLOSE_SESSION: &str = "menu://close-session";
 ///   back with a first-class accelerator.
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let about = AboutMetadataBuilder::new()
-        .name(Some("TRMNL"))
+        .name(Some("CRGGR.sh"))
         .version(Some(env!("CARGO_PKG_VERSION")))
         .build();
 
@@ -74,7 +74,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     let app_menu = Submenu::with_items(
         app,
-        "TRMNL",
+        "CRGGR.sh",
         true,
         &[
             &PredefinedMenuItem::about(app, None, Some(about))?,

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "TRMNL",
-  "mainBinaryName": "TRMNL",
+  "productName": "CRGGR.sh",
+  "mainBinaryName": "CRGGR",
   "version": "0.6.0",
   "identifier": "sh.grid.trmnl",
   "build": {
@@ -14,7 +14,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "TRMNL",
+        "title": "CRGGR.sh",
         "width": 1400,
         "height": 900,
         "minWidth": 620,

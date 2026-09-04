@@ -96,21 +96,26 @@ EOF
   done <<<"$STAMPED"
 fi
 
-# --- 2. a label Finder will draw over ---------------------------------------
-# Icons are 128px centred at y 196, so their boxes end at y 260 and Finder's own
-# label occupies roughly y 260-290 at text size 16. The artwork cannot move it.
-if grep -qiE '(^|[^a-z])(crggr[ .]?sh|applications)([^a-z]|$)' <<<"$TEXT"; then
-  fail "$(cat <<'EOF'
-the artwork appears to label the drop zones.
+# --- 2. anything in the band Finder draws its own label over -----------------
+# Checked in pixels, not in text. The wordmark in the header reads as "CRGGR.sh"
+# to OCR just as a drop-zone label would, so matching on the string flagged
+# artwork that was perfectly fine. What matters is whether the band under each
+# icon is clear, which is a question about pixels.
+echo "check-dmg-background: label bands"
 
-Finder writes the real filename under each icon, around y 260-290 for a 128px
-icon centred at y 196, and a label in that band ends up smeared under it.
-Either move the artwork labels below y 300, or drop them — Finder already names
-both, so they duplicate it.
-EOF
-)"
-else
-  echo "check-dmg-background: no drop-zone labels in Finder's own band"
+BAND_MSG='the artwork draws into the band where Finder writes its own labels.
+
+Finder writes each filename under its icon (roughly y 260-290 for a 128px icon
+centred at y 196) and the artwork cannot move it. Anything there — a label, or a
+plate behind one — ends up smeared under the filename. Leave the band empty and
+let Finder draw on the dark field.'
+
+if ! swift "$(dirname "$0")/check-label-band.swift" "$BACKGROUND" 1; then
+  fail "$BAND_MSG"
+fi
+
+if ! swift "$(dirname "$0")/check-label-band.swift" "$BACKGROUND_2X" 2 >/dev/null; then
+  fail "the @2x artwork draws into the label band (see above)"
 fi
 
 exit "$failed"

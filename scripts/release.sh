@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build, sign, and notarize a distributable TRMNL release.
+# Build, sign, and notarize a distributable CRGGR.sh release.
 #
 # Tauri notarizes and staples the .app, then builds the .dmg afterward — so the
 # disk image itself ships un-notarized and Gatekeeper rejects it on download.
@@ -32,7 +32,7 @@ source "$(dirname "$0")/signing-env.sh"
 # Deliberately a keychain profile rather than a dotenv file: the credential is an
 # app-specific password, and the keychain keeps it encrypted where a .env would
 # leave it in plaintext next to the source.
-: "${NOTARY_PROFILE:=TRMNL-notary}"
+: "${NOTARY_PROFILE:=TRMNL-notary}"  # keychain profile name, not the product
 
 # Resolve notarization credentials up front — failing here beats failing after a
 # full Rust release build.
@@ -72,8 +72,11 @@ echo "==> Building and signing"
 # notarizes the thing that actually ships, below.
 npm run tauri build
 
-app="src-tauri/target/release/bundle/macos/TRMNL.app"
-dmg=$(ls -t src-tauri/target/release/bundle/dmg/TRMNL_*.dmg 2>/dev/null | head -1)
+# Derived rather than hardcoded — see the same note in install-local.sh.
+product="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+
+app="src-tauri/target/release/bundle/macos/$product.app"
+dmg=$(ls -t "src-tauri/target/release/bundle/dmg/$product"_*.dmg 2>/dev/null | head -1)
 
 if [[ ! -d "$app" ]]; then
   echo "error: no .app produced at $app" >&2
