@@ -230,13 +230,16 @@ risk hiding the wrong one. Verified with two throwaway bundles under identical
 settings: `Foobar.app` displays as `Foobar`, `Foo.sh.app` displays as
 `Foo.sh.app`.
 
-`CFBundleDisplayName` does not override this — it names the app in the menu bar
-and the About box, both of which already read `CRGGR.sh`, but the icon label is
-the filename. The only real fix is renaming the bundle to `CRGGR.app`, which was
-considered and rejected: it would hide the extension in the Applications folder
-but leave the Dock reading `CRGGR.sh`, giving the same app two different names
-in the two places you look at it most. A consistent `CRGGR.sh.app` beats a
-tidier Finder and a contradictory Dock.
+`CFBundleDisplayName` does not override it. That key names the app in the menu
+bar, the About box **and the Dock**, all of which already read `CRGGR.sh` — the
+icon label in Finder is the filename, and only the filename.
+
+So the Dock is fine as-is, and the choice is narrower than it looks: renaming the
+bundle to `CRGGR.app` would change the Applications folder from `CRGGR.sh.app` to
+`CRGGR` and change nothing else. It was considered and declined — the filename
+matching the product name is worth more than a shorter row in Finder — but if
+that ever gets revisited, the reason to leave it alone is preference, not
+breakage.
 
 The hook handshake key (`1337;crggr-hooks=N`) is parsed in `src/term/osc133.ts`
 and emitted in `shell_integration.rs` — **rename one and you must rename the
