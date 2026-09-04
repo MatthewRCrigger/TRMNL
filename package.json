@@ -1,7 +1,7 @@
 {
-  "name": "trmnl",
+  "name": "crggr",
   "version": "0.6.0",
-  "description": "A TRON-inspired terminal for macOS, with a block-based command model.",
+  "description": "A terminal for macOS, built on the GRID design system.",
   "license": "MIT",
   "author": "Matthew Crigger",
   "repository": {

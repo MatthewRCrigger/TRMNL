@@ -1,4 +1,4 @@
-# Working on TRMNL
+# Working on CRGGR.sh
 
 Operational notes for coding agents. `README.md` explains what the app is and
 how it is built; this file is the shorter, sharper list of things that have
@@ -134,7 +134,7 @@ actually running.
 
 ## Config lives outside the bundle
 
-`~/.config/trmnl/config.json`, written atomically by `src-tauri/src/config.rs`.
+`~/.config/crggr/config.json`, written atomically by `src-tauri/src/config.rs`.
 Deliberately a dotfile, not Application Support.
 
 Every window writes to that one file, so a save merges rather than blindly
@@ -151,7 +151,7 @@ Any new globally-shared collection needs the same treatment.
 
 Workspace layout is the opposite — per-window, under its own key.
 
-Live windows are kept in step by a `trmnl://config-sync` event carrying settings
+Live windows are kept in step by a `crggr://config-sync` event carrying settings
 and profiles (`listenForConfigSync`). Only the shared slices travel; sessions,
 panes and focus are the window's own, and syncing those would make two windows
 mirror each other rather than be independent views.
@@ -177,7 +177,7 @@ Native window tabbing is unavailable: Tauri force-disables it when
 
 Never distribute a `npm run app:build` DMG. That produces an **ad-hoc,
 linker-signed** app — no hardened runtime, no entitlements, no sealed resources —
-and Gatekeeper rejects it outright with "TRMNL is damaged", not a click-through
+and Gatekeeper rejects it outright with "CRGGR.sh is damaged", not a click-through
 warning.
 
 ```bash
@@ -211,17 +211,22 @@ Bump the version in **all four** places or the app misreports itself:
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
 `src-tauri/Cargo.lock`.
 
-**The app is CRGGR.sh; three identifiers are still `trmnl` on purpose.** The
-bundle identifier `sh.grid.trmnl` (macOS keys TCC permissions and Gatekeeper
-history off it — changing it makes this a different app, not an upgrade),
-`~/.config/trmnl/` (every profile lives there; moving it without a migration
-loses them), and the shell hooks (`trmnl.zsh`, `__trmnl_osc`,
-`TRMNL_INTEGRATION_LOADED` — wire protocol that shells sourced by an older build
-are still running). Rename none of those casually. `mainBinaryName` is `CRGGR`
-rather than `CRGGR.sh` because a dot in `Contents/MacOS` reads as an extension.
+**Everything is CRGGR.sh now**, including the bundle identifier
+(`sh.crggr.app`), the config directory, the shell hooks and the crate. The one
+piece of history left is `config::migrate_legacy_config()`, which moves a
+pre-rename `~/.config/trmnl` across on first launch — and
+`shell_integration::install` deleting the orphaned `trmnl.*` hook files that
+migration brings with it. Both are one-shot and safe to delete once no machine
+could still be on an old build.
 
-Build scripts derive the bundle name from `tauri.conf.json` rather than
-hardcoding it, so the next rename does not leave them pointing at a stale path.
+`mainBinaryName` is `CRGGR` rather than `CRGGR.sh` because a dot in
+`Contents/MacOS` reads as a file extension. Build scripts derive the bundle name
+from `tauri.conf.json` rather than hardcoding it.
+
+The hook handshake key (`1337;crggr-hooks=N`) is parsed in `src/term/osc133.ts`
+and emitted in `shell_integration.rs` — **rename one and you must rename the
+other**, or shell integration silently stops reporting command boundaries and
+every block runs forever.
 
 **Nothing that expires goes on the installer background,** and the band under
 each icon stays empty — Finder draws the filename there (y 260-290 for a 128px
@@ -271,7 +276,7 @@ a notarized `.dmg`, while running it yourself needs neither the disk image nor t
 round trip to Apple — a bundle you built locally has no quarantine attribute, so
 Gatekeeper never challenges it.
 
-The script refuses to install while TRMNL is running from `/Applications`, since
+The script refuses to install while CRGGR.sh is running from `/Applications`, since
 replacing a bundle under a live process leaves a half-written copy. It uses
 `ditto` rather than `cp` to preserve the extended attributes the signature is
 computed over, and re-verifies the signature afterward.

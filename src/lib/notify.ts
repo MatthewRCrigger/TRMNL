@@ -8,7 +8,7 @@
  *  2. The command must have run past a threshold. Anything fast enough to watch
  *     does not warrant a notification.
  *  3. Permission is requested lazily, on the first notification that qualifies,
- *     so launching TRMNL never triggers a permission prompt on its own.
+ *     so launching the app never triggers a permission prompt on its own.
  */
 
 import {

@@ -18,7 +18,7 @@ Interfaces and config format may still change between versions.
 
 Download the latest `.dmg` from
 [Releases](https://github.com/MatthewRCrigger/TRMNL/releases), open it, and drag
-TRMNL to Applications. Builds are signed and notarized, so they open without a
+CRGGR.sh to Applications. Builds are signed and notarized, so they open without a
 Gatekeeper warning.
 
 **Apple Silicon only** — Intel Macs are not supported and there are no plans to
@@ -94,7 +94,7 @@ and a second browser engine for capabilities this app never uses.
 │  shell_integration.rs writes the OSC 133 hooks, injects them    │
 │  detect.rs            inspects cwd for the welcome state        │
 │  telemetry.rs         real CPU / mem / load / disk / network     │
-│  config.rs            atomic writes to ~/.config/trmnl          │
+│  config.rs            atomic writes to ~/.config/crggr          │
 └────────────────────────┬────────────────────────────────────────┘
                          │  events: pty://data, pty://exit
                          │  commands: pty_spawn, pty_write, …
@@ -202,32 +202,25 @@ prototype's 3-character prefix hack.
 literal. There is no accent to derive from: **GRID is functionally monochrome**,
 and colour is a *signal* rather than decoration.
 
-The load-bearing properties:
+Five rules govern it, and `src/styles/tokens.test.ts` asserts every one against
+the stylesheets — so the fastest way to learn them is to break one:
 
-1. **One signal plane.** Every signal hue sits at L 0.83 / C 0.14 — red excepted
-   at L 0.70 / C 0.19 so alarm reads hotter — so hue is the only variable and
-   nothing shouts louder than anything else. Tint fills never exceed 0.16 and are
-   the only translucency in the system.
-2. **Hierarchy is line brightness, not thickness.** Four brightnesses
-   (`--line-100` … `--line-400`) and one weight. To make a rule read, brighten
-   it; do not thicken it.
-3. **No elevation.** Depth is line brightness, then surface fill, then a scrim —
-   in that order. There are no drop shadows; `--elev-dialog`, a hard 1px halo of
-   void, is the single sanctioned exception.
+1. **One signal plane.** Hue is the only variable between signals.
+2. **Hierarchy is line brightness, not thickness.** To make a rule read,
+   brighten it; do not thicken it.
+3. **No elevation.** No drop shadows; `--elev-dialog` is the one exception.
 4. **12px is the floor.** There is no literal `font-size` in the stylesheets at
-   all, so it cannot be undercut one rule at a time — which is exactly how the
-   old build's 8.5–10px chrome crept in.
+   all, so it cannot be undercut one rule at a time — which is how the old
+   build's 8.5–10px chrome crept in.
 5. **Two families, split by origin.** Rajdhani for anything a person wrote,
-   Space Mono for anything a system emitted. Casing carries the same split:
-   uppercase is the app talking about itself, lowercase is shell truth.
-
-`src/styles/tokens.test.ts` asserts all of this against the stylesheets.
+   Space Mono for anything a system emitted. Casing carries the same split.
 
 The token set is the **applied** one, not GRID's defaults — four rows differ and
-they are the whole visual character of the build: a 2px panel border, a 4px frame
-gap, round corners (8px outer, 4px inner) and a 14px panel heading. The round
-corner is a deliberate override of GRID's own `DESIGN_GUIDE.md`, which calls a
-rounded card a bug; the live theme setting overrides that on purpose.
+they are the whole visual character of the build: a 2px panel border, a 4px
+frame gap, round corners (8px outer, 4px inner) and a 14px panel heading. The
+round corner is a deliberate override of GRID's own `DESIGN_GUIDE.md`, which
+calls a rounded card a bug; the live theme setting overrides that on purpose, so
+do not "correct" it.
 
 **Traffic lights are native.** macOS draws and manages them via a transparent
 titlebar. Reimplementing them would mean owning window drag, zoom, fullscreen,
@@ -257,26 +250,12 @@ The **double frame** (outer line, a gap of void, inner line) is reserved for the
 outermost container of a view. The window has one and a dialog has one; inside
 either, single hairlines only, or the screen turns to corduroy.
 
-### App icon
+### App icon and installer
 
-The source of truth is **`crggr-sh.icon/`**, an Icon Composer bundle of three
-layers, top-first: the amber brackets and `.sh` (accent), `CRGGR` in ink
-(mark), and an opaque `#060809` field. Nothing is drawn — the whole mark is the
-bracket lockup from the wordmark set in the system's own two families, which is
-what keeps it inside the rule forbidding a logotype, an emblem or an icon mark.
-
-**Glass is off**, along with shadow and translucency. `elevation.css` opens by
-saying nothing casts light onto anything else, and a specular sheen on the mark
-would be the first thing anyone sees disagreeing with that. If it ever reads
-dead beside Tahoe's own icons, the sanctioned fallback is `glass: true` on the
-**accent layer only** — never on the wordmark.
-
-The field is `#060809` rather than true black on purpose: it keeps a faint edge
-against a black dock instead of reading as a hole.
-
+The icon's source of truth is **`crggr-sh.icon/`**, an Icon Composer bundle.
 Tauri cannot read `.icon` bundles, so the rasters under `src-tauri/icons/` are
-generated from it. To regenerate after editing the bundle — layers are passed
-**bottom-first**, the reverse of how `icon.json` lists them:
+generated from it — layers passed **bottom-first**, the reverse of how
+`icon.json` lists them:
 
 ```bash
 swift scripts/composite-icon.swift \
@@ -287,74 +266,25 @@ swift scripts/composite-icon.swift \
 npx tauri icon src-tauri/icons/icon.png && rm -rf src-tauri/icons/android src-tauri/icons/ios
 ```
 
-The small-size treatments the icon spec calls for — dropping `.sh` at 64, and
-brackets plus the block caret at 32/16 — are **not yet authored**. They are
-different compositions rather than scaled versions of the 1024, so they need
-drawing separately; until then macOS downsamples the full lockup.
+The installer background is `src-tauri/dmg/`, wired up in `tauri.conf.json`
+under `bundle.macOS.dmg` together with the window size and both icon positions.
+The artwork frames those positions, so the two have to agree — change one and
+the notches end up somewhere the icons are not.
 
-### Installer
+`scripts/check-dmg-background.sh` checks that agreement, and runs from
+`release.sh` before the build. What it enforces, and why, is in its own header.
 
-`src-tauri/dmg/dmg-background.png` (and its `@2x`) is the volume background,
-wired up in `tauri.conf.json` under `bundle.macOS.dmg` along with the window
-size and both icon positions. The drop zones in the artwork are corner notches
-sitting just *outside* each 128px icon box, so they frame the icon rather than
-being covered by it — which means the coordinates in the config and the artwork
-have to agree:
-
-| Item | Position | Size |
-|---|---|---|
-| `CRGGR.sh.app` | 160, 196 | 128 |
-| `Applications` alias | 480, 196 | 128 |
-
-The app's zone is amber and the Applications zone is `--line-300`: one is the
-thing you are moving, the other is where it goes.
-
-**The band under each icon stays empty.** Finder draws its own filename there
-(roughly y 260–290 for a 128px icon centred at 196) and the artwork cannot move
-it, so anything drawn in that band — a label, or a plate behind one — ends up
-smeared under the filename. `check-label-band.swift` measures it in pixels
-rather than matching text, because the wordmark in the header reads as
-"CRGGR.sh" to OCR exactly as a drop-zone label would.
-
-**Nothing that expires belongs on this artwork.** It is a flat PNG, so any
-claim written on it is one the build cannot check and nothing corrects — a
-version in particular goes stale on the *next* release, silently, while the DMG
-still mounts and installs perfectly. `scripts/check-dmg-background.sh` reads the
-image back with Vision and fails the release if it finds a version that is not
-the one being built; `release.sh` runs it before the build rather than after, so
-a stale asset costs seconds instead of a full sign-and-notarize round trip.
+The icon's small-size treatments (64, 32, 16) are **not yet authored** — they
+are separate compositions rather than scaled versions, so macOS downsamples the
+full lockup until someone draws them.
 
 ### Config
 
-`~/.config/trmnl/config.json`, written atomically (temp file + rename) because
+`~/.config/crggr/config.json`, written atomically (temp file + rename) because
 settings save on every keystroke and there is no Save button. Stored as JSON
 rather than the handoff's TOML: the frontend owns this blob's shape, and
 round-tripping nested UI state through TOML buys nothing. The Settings footer
 reflects whatever path the backend reports.
-
-## The name
-
-The app ships as **CRGGR.sh** — `productName`, the bundle name, the window
-title, the macOS menu, the DMG volume and the icon label all say it, and the
-UI follows the wordmark rules: `CRGGR` in Rajdhani 600 at `.28em`, caps,
-`--ink-100`; `.sh` in Space Mono 400, lowercase, amber, at 0.75× the display
-size. Never set `.sh` in Rajdhani, never in caps, never in ink — it is the one
-lowercase thing in the chrome, and that is the point.
-
-Three things deliberately still say `trmnl`, and each would cost something real
-to change:
-
-| Still `trmnl` | Why it stays |
-|---|---|
-| bundle identifier `sh.grid.trmnl` | macOS keys TCC permissions and Gatekeeper history off it. Changing it makes this a *different* app: every permission re-prompts, and a user with the old build installed gets two apps rather than an upgrade. |
-| `~/.config/trmnl/` | Every profile, keybinding and workspace lives here. Moving it without a migration silently loses all of them. |
-| shell hooks (`trmnl.zsh`, `__trmnl_osc`, `TRMNL_INTEGRATION_LOADED`) | Wire protocol. A shell sourced by an older build is still running these names; renaming them breaks the OSC 133 boundary reporting in every open session. |
-
-`mainBinaryName` is `CRGGR`, not `CRGGR.sh`: it names the executable inside
-`Contents/MacOS`, where a dot reads as a file extension to some tooling. The
-bundle around it is still `CRGGR.sh.app`, which is what anyone sees.
-
-The **repository** is also still `TRMNL`, which is only a URL.
 
 ## Deviations from the prototype worth knowing
 
@@ -482,7 +412,7 @@ when clicked is worse than one that says it isn't ready.
 verifies them.
 
 Nothing about signing is baked into this repo — the certificate and Apple ID
-belong to whoever is building. If you only want to run TRMNL, none of this
+belong to whoever is building. If you only want to run CRGGR.sh, none of this
 applies: `npm run app` and `npm run app:build` need no identity at all. Signing
 matters only for a build you intend to hand to someone else.
 
@@ -533,7 +463,7 @@ Two things worth knowing:
 Verify a build with:
 
 ```bash
-spctl -a -vvv -t install src-tauri/target/release/bundle/macos/TRMNL.app
+spctl -a -vvv -t install src-tauri/target/release/bundle/macos/CRGGR.sh.app
 ```
 
 `accepted` with `source=Notarized Developer ID` is the goal;

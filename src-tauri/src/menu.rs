@@ -7,7 +7,7 @@
 //! localized and with the system's own key equivalents. Anything we implement
 //! ourselves would have to re-derive that, badly.
 //!
-//! **Custom** items are the ones with no system meaning: a session is a TRMNL
+//! **Custom** items are the ones with no system meaning: a session is a CRGGR.sh
 //! concept, so New/Close Session can only be a custom item that emits an event
 //! for the frontend to act on.
 //!
@@ -229,11 +229,11 @@ fn profile_submenu<R: Runtime>(
 /// would open or close a session somewhere the user cannot see.
 fn emit_to_focused<R: Runtime>(app: &AppHandle<R>, event: &str, payload: Option<String>) {
     let Some(window) = focused(app) else {
-        eprintln!("trmnl: dropped {event}, no focused window");
+        eprintln!("crggr: dropped {event}, no focused window");
         return;
     };
     if let Err(e) = window.emit(event, payload) {
-        eprintln!("trmnl: could not emit {event}: {e}");
+        eprintln!("crggr: could not emit {event}: {e}");
     }
 }
 
@@ -250,7 +250,7 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
         // the right of the window the user was actually looking at.
         let from = focused(app);
         if let Err(e) = crate::window::open(app, from.as_ref()) {
-            eprintln!("trmnl: could not open a new window: {e}");
+            eprintln!("crggr: could not open a new window: {e}");
         }
         return;
     }
@@ -262,7 +262,7 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
         // Predefined items never reach here; anything else is a menu id we
         // added and forgot to wire, which is worth a line in the log.
         other => {
-            eprintln!("trmnl: unhandled menu item '{other}'");
+            eprintln!("crggr: unhandled menu item '{other}'");
             return;
         }
     };

@@ -151,10 +151,10 @@ function parseOsc(body: string): Osc133Event | null {
     }
   }
 
-  // Private announcement from our own hooks: `1337;trmnl-hooks=N`. Anything else
+  // Private announcement from our own hooks: `1337;crggr-hooks=N`. Anything else
   // on 1337 belongs to iTerm2's vocabulary and is passed through untouched.
-  if (body.startsWith('1337;trmnl-hooks=')) {
-    const version = Number.parseInt(body.slice('1337;trmnl-hooks='.length), 10)
+  if (body.startsWith('1337;crggr-hooks=')) {
+    const version = Number.parseInt(body.slice('1337;crggr-hooks='.length), 10)
     return Number.isFinite(version) ? { type: 'hooks', version } : null
   }
 

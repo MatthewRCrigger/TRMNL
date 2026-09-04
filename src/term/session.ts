@@ -477,7 +477,7 @@ export class PtySession {
             this.expectedHookVersion !== null && event.version !== this.expectedHookVersion
           if (this.hookMismatch) {
             console.warn(
-              `trmnl: shell announced hook version ${event.version}, expected ` +
+              `crggr: shell announced hook version ${event.version}, expected ` +
                 `${this.expectedHookVersion}. Degrading to a single block — ` +
                 'open a new session to pick up the current hooks.',
             )

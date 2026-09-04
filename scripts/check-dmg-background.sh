@@ -10,10 +10,16 @@
 #   2. Text under a drop zone lands in the band where Finder draws its own
 #      label, and the two smear over each other.
 #
-# Both are checked by reading the artwork back with the OS's own OCR (Vision,
-# via the Swift shim beside this script). Every check runs before anything
-# exits, so one re-export can fix all of the problems rather than uncovering
-# them one release at a time.
+# The version is found by reading the artwork back with the OS's own OCR
+# (Vision, via read-image-text.swift). The label band is measured in *pixels*
+# instead (check-label-band.swift), because matching text there is a false
+# positive by construction: the wordmark in the header reads as "CRGGR.sh" to
+# OCR exactly as a drop-zone label would, and an earlier version of this script
+# failed correct artwork for that reason. What matters is whether the band is
+# empty, which is a question about pixels.
+#
+# Every check runs before anything exits, so one re-export can fix all of the
+# problems rather than uncovering them one release at a time.
 #
 # Run from `release.sh` before bundling, and by hand after re-exporting the
 # background.

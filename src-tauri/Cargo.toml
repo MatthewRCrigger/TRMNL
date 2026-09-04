@@ -1,13 +1,13 @@
 [package]
-name = "trmnl"
+name = "crggr"
 version = "0.6.0"
-description = "TRMNL — a TRON-inspired terminal for macOS"
+description = "CRGGR.sh — a terminal for macOS, built on the GRID design system"
 authors = ["Matthew Crigger"]
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "trmnl_lib"
+name = "crggr_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

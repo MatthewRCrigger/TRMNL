@@ -893,7 +893,7 @@ export const useStore = create<StoreState>((set, get) => ({
     // another window, and attaching would point this UI at a stranger's shell.
     const owner = ownerOf(id)
     if (owner !== null && owner !== windowLabel) {
-      console.error(`trmnl: refusing to adopt ${id}, owned by ${owner}`)
+      console.error(`crggr: refusing to adopt ${id}, owned by ${owner}`)
       return
     }
 
@@ -1016,7 +1016,7 @@ export const useStore = create<StoreState>((set, get) => ({
         await pty.run(profile.startupCmd)
       }
     } catch (err) {
-      console.error('trmnl: failed to spawn shell', err)
+      console.error('crggr: failed to spawn shell', err)
       // Mark the session so the pane can report a dead shell. Without this the
       // session renders as ready and every command hangs on RUNNING.
       const reason = err instanceof Error ? err.message : String(err)
@@ -1492,7 +1492,7 @@ const deletedProfiles = new Set<string>()
  * to reach the others or each shows a different truth until reloaded. The file on
  * disk is the durable record; this is what makes the *live* windows agree.
  */
-const CONFIG_SYNC = 'trmnl://config-sync'
+const CONFIG_SYNC = 'crggr://config-sync'
 
 interface ConfigSync {
   /** Emitting window's label, so it can ignore its own broadcast. */
@@ -1572,7 +1572,7 @@ function persist(): void {
           }),
         }),
       )
-      .catch((err) => console.error('trmnl: could not save config', err))
+      .catch((err) => console.error('crggr: could not save config', err))
 
     // Tell the other windows, so they do not sit on a stale profile list until
     // reloaded. Emitted after the write is queued rather than awaited: the file

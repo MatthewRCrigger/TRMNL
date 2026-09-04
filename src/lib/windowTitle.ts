@@ -6,7 +6,7 @@
  *
  * The shape is Terminal.app's, deliberately: `dir — command — 80×24`, em-dash
  * separated. It is the format every Mac terminal user already parses at a glance,
- * and matching it means the Dock preview reads the same way TRMNL's does.
+ * and matching it means the Dock preview reads the same way Terminal's does.
  */
 
 /** What the title needs to know about the active session. Deliberately not
@@ -27,7 +27,7 @@ export interface TitleParts {
 
 /** Shown when there is no session at all — during boot, or after the last one
  *  closes and before its replacement spawns. */
-export const FALLBACK_TITLE = 'TRMNL'
+export const FALLBACK_TITLE = 'CRGGR.sh'
 
 /**
  * Build the window title from the active session.
@@ -72,7 +72,7 @@ function directoryLabel(cwd?: string, home?: string): string {
 
   if (homePath && path === homePath) return '~'
   // A path under home keeps its basename; only home *itself* becomes `~`, since
-  // `~/src/trmnl` would just be a longer way of writing `trmnl`.
+  // `~/src/crggr` would just be a longer way of writing `crggr`.
   if (homePath && path.startsWith(`${homePath}/`)) {
     return basename(path.slice(homePath.length + 1))
   }

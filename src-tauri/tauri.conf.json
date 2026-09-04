@@ -3,7 +3,7 @@
   "productName": "CRGGR.sh",
   "mainBinaryName": "CRGGR",
   "version": "0.6.0",
-  "identifier": "sh.grid.trmnl",
+  "identifier": "sh.crggr.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",

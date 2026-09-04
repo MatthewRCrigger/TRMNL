@@ -1,4 +1,4 @@
-//! TRMNL — a TRON-inspired terminal for macOS.
+//! CRGGR.sh — a terminal for macOS, built on the GRID design system.
 //!
 //! This crate is the native half: real PTYs, shell integration, telemetry and
 //! config. All rendering and the block model live in the frontend.
@@ -228,7 +228,7 @@ pub fn run() {
                     let killed = state.pty.kill_for_window(window.label());
                     if killed > 0 {
                         eprintln!(
-                            "trmnl: reaped {killed} session(s) with window '{}'",
+                            "crggr: reaped {killed} session(s) with window '{}'",
                             window.label()
                         );
                     }
@@ -236,11 +236,16 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Before anything reads config: the app was TRMNL before it was
+            // CRGGR.sh, and this moves ~/.config/trmnl across once. Without it
+            // a rename looks like a fresh install with every profile gone.
+            config::migrate_legacy_config();
+
             // Install (or refresh) the shell-integration scripts on every launch so
-            // an upgraded TRMNL always ships current hooks.
+            // an upgraded build always ships current hooks.
             let dir = config::config_dir();
             let integration_dir = shell_integration::install(&dir).unwrap_or_else(|e| {
-                eprintln!("trmnl: could not install shell integration: {e}");
+                eprintln!("crggr: could not install shell integration: {e}");
                 dir.join("shell-integration")
             });
 
@@ -270,5 +275,5 @@ pub fn run() {
             path_commands,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running TRMNL");
+        .expect("error while running CRGGR.sh");
 }

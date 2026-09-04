@@ -251,7 +251,7 @@ function useWindowTitle(): void {
   useEffect(() => {
     // Held outside the subscriber so it survives across store writes; the empty
     // initial value guarantees the first computed title is always sent, even if
-    // it is the same "TRMNL" the config booted with.
+    // it is the same "CRGGR.sh" the config booted with.
     let applied = ''
 
     const sync = (state: ReturnType<typeof useStore.getState>) => {
