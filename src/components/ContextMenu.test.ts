@@ -88,12 +88,11 @@ describe('matchingProfile', () => {
     expect(matchingProfile([other, own], session(), own, HOME)?.id).toBe('p-own')
   })
 
-  it('ignores name, colour and env when comparing', () => {
+  it('ignores name and env when comparing', () => {
     // These are how two profiles over one directory differ on purpose; matching
     // on them would call every renamed profile a new one.
     const p = profile({
       name: 'renamed',
-      accent: 'oklch(0.75 0.18 152)',
       env: [{ key: 'FOO', value: '1' }],
     })
     expect(matchingProfile([p], session(), undefined, HOME)?.id).toBe('p1')

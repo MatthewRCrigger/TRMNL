@@ -1,9 +1,17 @@
-/** Command palette — ⌘K. */
+/** `COMMAND .PALETTE` — ⌘K.
+ *
+ * A Dialog at 560, with the query field taking a cyan focus border and a static
+ * block caret. Results are grouped, each group labelled and followed by a dotted
+ * leader; the active row carries a 2px amber left edge over the amber tint fill,
+ * which every row reserves in transparent so moving the selection never shifts
+ * a label sideways.
+ */
 
 import { useEffect, useMemo, useRef } from 'react'
 
 import { rank } from '../lib/fuzzy'
 import { useStore } from '../state/store'
+import { Dialog, KeyCap } from './grid'
 
 type ItemAction =
   | { type: 'new-session'; profileId?: string }
@@ -11,7 +19,6 @@ type ItemAction =
   | { type: 'close-pane' }
   | { type: 'run'; cmd: string }
   | { type: 'clear' }
-  | { type: 'appearance' }
   | { type: 'settings' }
 
 interface Item {
@@ -46,7 +53,6 @@ export function Palette() {
   const closeSession = useStore((s) => s.closeSession)
   const runCommand = useStore((s) => s.runCommand)
   const clearBuffer = useStore((s) => s.clearBuffer)
-  const toggleAppearance = useStore((s) => s.toggleAppearance)
   const openSettings = useStore((s) => s.openSettings)
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -90,8 +96,7 @@ export function Palette() {
 
     base.push(
       { group: 'SYSTEM', label: 'Clear Buffer', kbd: '⌃L', action: { type: 'clear' } },
-      { group: 'SYSTEM', label: 'Appearance…', kbd: '⌘,', action: { type: 'appearance' } },
-      { group: 'SYSTEM', label: 'All Settings…', action: { type: 'settings' } },
+      { group: 'SYSTEM', label: 'Settings…', kbd: '⌘,', action: { type: 'settings' } },
     )
 
     return base
@@ -143,9 +148,6 @@ export function Palette() {
         case 'clear':
           if (sessionId) clearBuffer(sessionId)
           break
-        case 'appearance':
-          toggleAppearance(true)
-          break
         case 'settings':
           openSettings()
           break
@@ -181,65 +183,85 @@ export function Palette() {
   let lastGroup = ''
 
   return (
-    <div className="overlay" onMouseDown={closePalette}>
-      <div
-        className="palette"
-        onMouseDown={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label="Command palette"
-      >
-        <span className="bracket bracket--tl" style={{ width: 11, height: 11 }} />
-        <span className="bracket bracket--br" style={{ width: 11, height: 11 }} />
-
-        <div className="palette__head">
-          <span className="micro">COMMAND PALETTE</span>
-          <span className="palette__count">{results.length} MATCHES</span>
-        </div>
-
+    <Dialog
+      open={open}
+      onClose={closePalette}
+      escapeHandledByWindow
+      title="COMMAND .PALETTE"
+      width={560}
+      index={{ current: Math.min(activeIndex + 1, results.length), total: results.length }}
+      flush
+      className="palette"
+      footer={
+        <>
+          <span className="palette__foot">
+            <span className="palette__hint">
+              <KeyCap size="sm">↑</KeyCap>
+              <KeyCap size="sm">↓</KeyCap> MOVE
+            </span>
+            <span className="palette__hint">
+              <KeyCap size="sm">↵</KeyCap> RUN
+            </span>
+          </span>
+          <span className="leader" />
+          <span className="palette__count">{results.length} RESULTS</span>
+        </>
+      }
+    >
+      <div className="palette__query">
+        <span className="palette__sigil">$</span>
         <input
           ref={inputRef}
           className="palette__input"
           value={query}
-          placeholder="Search sessions, hosts, commands…"
+          placeholder="search sessions, hosts, commands…"
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           spellCheck={false}
           aria-label="Search"
         />
-
-        <div className="palette__results" ref={listRef}>
-          {results.map((item, i) => {
-            const header = item.group !== lastGroup ? item.group : null
-            lastGroup = item.group
-            return (
-              <div key={`${item.group}-${item.label}-${i}`}>
-                {header && <div className="palette__group micro">{header}</div>}
-                <button
-                  className="palette__item"
-                  data-active={i === activeIndex}
-                  onClick={() => activate(item)}
-                  onMouseEnter={() => setPaletteIndex(i)}
-                  type="button"
-                >
-                  <span className="palette__label">{item.label}</span>
-                  <span className="rule" />
-                  {item.description && (
-                    <span className="palette__desc">{item.description}</span>
-                  )}
-                  {item.kbd && <span className="kbd">{item.kbd}</span>}
-                </button>
-              </div>
-            )
-          })}
-          {results.length === 0 && <div className="palette__empty">No matches</div>}
-        </div>
-
-        <div className="palette__foot">
-          <span>↑↓ NAVIGATE</span>
-          <span>↵ SELECT</span>
-          <span>ESC CLOSE</span>
-        </div>
+        {/* Static block, sitting after the typed text. It does not blink. */}
+        {!query && <span className="palette__caret" aria-hidden />}
       </div>
-    </div>
+
+      <div className="palette__results" ref={listRef}>
+        {results.map((item, i) => {
+          const header = item.group !== lastGroup ? item.group : null
+          lastGroup = item.group
+          return (
+            <div key={`${item.group}-${item.label}-${i}`}>
+              {header && (
+                <div className="palette__group">
+                  <span>{header}</span>
+                  <span className="leader" />
+                </div>
+              )}
+              <button
+                className="palette__item"
+                data-active={i === activeIndex || undefined}
+                onClick={() => activate(item)}
+                onMouseEnter={() => setPaletteIndex(i)}
+                type="button"
+              >
+                <span className="palette__glyph">{GLYPHS[item.group] ?? '·'}</span>
+                <span className="palette__label">{item.label}</span>
+                <span className="leader" />
+                {item.description && <span className="palette__desc">{item.description}</span>}
+                {item.kbd && <span className="palette__kbd">{item.kbd}</span>}
+              </button>
+            </div>
+          )
+        })}
+        {results.length === 0 && <div className="palette__empty">NO MATCHES</div>}
+      </div>
+    </Dialog>
   )
+}
+
+/** A 10px glyph column, in --ink-300, naming what kind of row this is. */
+const GLYPHS: Record<string, string> = {
+  SESSION: '▸',
+  CONNECT: '↗',
+  RUN: '$',
+  SYSTEM: '▪',
 }

@@ -1,0 +1,105 @@
+/* Harness chrome only. Nothing here is shipped in the app. */
+
+body { background: var(--void); }
+
+.hx { height: 100%; padding: 16px; }
+
+.hx__frame { height: 100%; }
+
+.hx__bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: none;
+  padding: 8px 18px 0;
+  border-bottom: var(--stroke-1) solid var(--line-300);
+}
+
+.hx__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-200);
+}
+
+.hx__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.hx__section { display: flex; flex-direction: column; gap: var(--panel-gap); }
+
+.hx__sechead { display: flex; align-items: center; gap: 8px; }
+
+.hx__seclabel {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+
+.hx__grid {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 9px 16px;
+  align-items: baseline;
+}
+
+.hx__k {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+
+.hx__v {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-100);
+}
+
+.hx__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.hx__icon { color: var(--ink-200); display: flex; }
+
+.hx__nav { display: flex; min-height: 200px; }
+
+.hx__navbody { padding: 20px 24px; display: flex; gap: 12px; align-items: baseline; }
+
+.hx__subject {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--signal-amber);
+}
+
+.hx__composer { border: var(--stroke-1) solid var(--line-400); }
+.hx__composer .composer { border-top: none; }
+.hx__search { width: 420px; }
+.hx__grid-lines { display: flex; flex-direction: column; margin-bottom: 12px; }
+
+.hx__panes {
+  display: flex;
+  height: 180px;
+  border: var(--stroke-1) solid var(--line-400);
+  overflow: hidden;
+}
+
+.hx__panes .pane { flex: 1; }
+
+.hx__panebody { padding: 16px; }
+
+.hx__ctx { display: flex; }

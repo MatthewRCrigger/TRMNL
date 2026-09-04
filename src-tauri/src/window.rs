@@ -27,7 +27,7 @@ mod conf {
     /// Not the live title — the frontend overwrites this per window as soon as it
     /// boots (see `useWindowTitle` in App.tsx). It is what the window is called
     /// for the moment before that, so it should match the config's.
-    pub const TITLE: &str = "TRMNL";
+    pub const TITLE: &str = "CRGGR.sh";
     pub const WIDTH: f64 = 1400.0;
     pub const HEIGHT: f64 = 900.0;
     pub const MIN_WIDTH: f64 = 620.0;

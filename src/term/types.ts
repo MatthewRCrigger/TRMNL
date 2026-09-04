@@ -36,15 +36,6 @@ export interface Block {
   running: boolean
   /** A long-running process that is not expected to exit. */
   live: boolean
-  /**
-   * Accent this command claimed while it ran, if any.
-   *
-   * Held on the block so its header keeps the tool's colour after the global
-   * accent reverts — the block is a record of what ran, and the colour is part
-   * of that record. Undefined for commands with no matching rule, which then
-   * follow the live accent as before.
-   */
-  accent?: string
   /** Parsed output, appended as it streams. */
   lines: Line[]
   /** Exit code. Undefined while running. */
@@ -98,12 +89,12 @@ export interface BuildRoute {
   marker: 'static' | 'dynamic'
   size: string
   firstLoad: string
-  /** Rendered in --warn when the first-load budget is exceeded. */
+  /** The one amber cell in the build table when the budget is exceeded. */
   overBudget?: boolean
 }
 
 export interface GitGroup {
-  /** MODIFIED renders in --warn, UNTRACKED in --err. */
+  /** STAGED renders amber, UNTRACKED red. */
   label: string
   tone: 'warn' | 'err'
   files: GitFile[]
@@ -127,7 +118,7 @@ export interface ServeHint {
   label: string
 }
 
-/** Derive the visual state from a block. Drives spine colour, chip and actions. */
+/** Derive the visual state from a block. Drives the panel toggles and badge. */
 export function blockState(block: Block): BlockState {
   if (block.running) return block.live ? 'live' : 'running'
   if (block.code === EXIT_CANCELLED) return 'cancelled'
@@ -135,31 +126,75 @@ export function blockState(block: Block): BlockState {
   return 'failure'
 }
 
-/** The spine (left border) colour token for a state. */
-export function spineVar(state: BlockState): string {
-  switch (state) {
-    case 'running':
-    case 'live':
-      return 'var(--warn)'
-    case 'failure':
-    case 'cancelled':
-      return 'var(--err)'
-    default:
-      return 'var(--ac)'
+/**
+ * A block's state, expressed as panel toggles.
+ *
+ * This is the core mapping of the GRID rebuild. A block used to be a bare left
+ * border and later a box with a filled accent header; it is now a panel, and
+ * exit status is not a chip bolted onto that panel — it *is* the panel's border
+ * and header fill.
+ *
+ *   settled, exit 0  → colour unset (falls back to --line-300), header plain
+ *   latest           → colour unset (--line-100 via `latest`), header FILLED
+ *   non-zero exit    → red border,  header FILLED
+ *   running / live   → cyan border, header plain
+ *   raw dump         → no panel at all
+ *
+ * `headerFilled` is reserved for the block you are currently reading. Two
+ * filled headers in one viewport — the latest block plus a failure — is the
+ * intended maximum; a stream of them is a bug, which is why nothing else in
+ * this function can set it.
+ *
+ * The raw-dump case matters most for long output: a 10,000-line scrollback
+ * dump gets no frame at all rather than a frame per block, because at that
+ * length the frame stops being an addressable unit and becomes noise.
+ */
+export function blockPanel(
+  block: Block,
+  options: { isLatest: boolean; rawDumpThreshold: number },
+): { panelColor: string | null; headerFilled: boolean; showPanel: boolean } {
+  const state = blockState(block)
+  const failed = state === 'failure' || state === 'cancelled'
+  const running = state === 'running' || state === 'live'
+
+  return {
+    panelColor: failed
+      ? 'var(--signal-red)'
+      : running
+        ? 'var(--signal-cyan)'
+        : options.isLatest
+          ? 'var(--line-100)'
+          : null,
+    headerFilled: options.isLatest || failed,
+    // Structured output is never a raw dump however long it is: it has been
+    // parsed into a table or a list, which is the opposite of an unframed
+    // scrollback spill.
+    showPanel: !!block.structured || block.lines.length <= options.rawDumpThreshold,
   }
 }
 
-/** The status chip label. */
-export function chipLabel(block: Block, state: BlockState): string {
+/** The badge label and tone for a block's state. */
+export function blockBadge(
+  block: Block,
+  isLatest: boolean,
+): { label: string; tone: 'accent' | 'live' | 'success' | 'danger' | 'neutral'; dot: boolean } {
+  const state = blockState(block)
+
   switch (state) {
     case 'running':
-      return 'RUNNING'
+      return { label: 'RUNNING', tone: 'live', dot: true }
     case 'live':
-      return 'LIVE'
+      return { label: 'LIVE', tone: 'live', dot: true }
     case 'cancelled':
-      return 'CANCELLED'
+      return { label: 'CANCELLED', tone: 'danger', dot: false }
+    case 'failure':
+      return { label: `EXIT ${block.code ?? 0}`, tone: 'danger', dot: false }
     default:
-      return `EXIT ${block.code ?? 0}`
+      // The latest settled block says so; the badge is what tells you which
+      // filled header you are looking at when a failure is also on screen.
+      return isLatest
+        ? { label: 'LATEST', tone: 'neutral', dot: false }
+        : { label: `EXIT ${block.code ?? 0}`, tone: 'success', dot: true }
   }
 }
 

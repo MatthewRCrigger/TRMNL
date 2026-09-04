@@ -1,9 +1,9 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "TRMNL",
-  "mainBinaryName": "TRMNL",
-  "version": "0.5.6",
-  "identifier": "sh.grid.trmnl",
+  "productName": "CRGGR.sh",
+  "mainBinaryName": "CRGGR",
+  "version": "0.6.0",
+  "identifier": "sh.crggr.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "TRMNL",
+        "title": "CRGGR.sh",
         "width": 1400,
         "height": 900,
         "minWidth": 620,
@@ -33,11 +33,31 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
-    "icon": ["icons/icon.icns"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/icon.icns"
+    ],
     "macOS": {
       "minimumSystemVersion": "11.0",
-      "entitlements": "entitlements.plist"
+      "entitlements": "entitlements.plist",
+      "dmg": {
+        "background": "dmg/dmg-background.png",
+        "windowSize": {
+          "width": 640,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 160,
+          "y": 196
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 196
+        }
+      }
     }
   }
 }

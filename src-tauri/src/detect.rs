@@ -258,7 +258,7 @@ mod tests {
     use super::*;
 
     fn tmpdir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("trmnl-detect-{name}"));
+        let dir = std::env::temp_dir().join(format!("crggr-detect-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

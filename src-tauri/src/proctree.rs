@@ -10,7 +10,7 @@
 //! every live descendant. The frontend matches those words against the same
 //! accent rules it already applies to the typed command, which is what makes a
 //! chained tool colour the interface without the script knowing anything about
-//! TRMNL.
+//! CRGGR.sh.
 //!
 //! Two properties of real trees drive the implementation, both observed rather
 //! than assumed:

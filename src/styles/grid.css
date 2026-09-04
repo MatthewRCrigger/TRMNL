@@ -1,0 +1,1008 @@
+/* The GRID component library's styles.
+ *
+ * One rule per contract in the handoff's §4. App-level surfaces live in
+ * app.css and compose these; nothing here knows about blocks, sessions or
+ * panes.
+ */
+
+/* =========================================================================
+ * Button
+ *
+ * Square (--radius-0) at every size and variant. The height/padding pairing is
+ * the easy mistake — 28/10, 36/14, 44/20 — so each size sets both together.
+ * Font is --text-2xs everywhere except lg, which takes --text-sm.
+ * ========================================================================= */
+
+.gbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: none;
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: var(--stroke-1) solid transparent;
+  border-radius: var(--radius-0);
+  transition: var(--transition-state);
+}
+
+.gbtn--sm { height: var(--control-h-sm); padding: 0 var(--control-px-sm); }
+.gbtn--md { height: var(--control-h-md); padding: 0 var(--control-px-md); }
+.gbtn--lg {
+  height: var(--control-h-lg);
+  padding: 0 var(--control-px-lg);
+  font-size: var(--text-sm);
+}
+
+.gbtn:disabled {
+  color: var(--ink-400);
+  border-color: var(--line-400);
+  background: transparent;
+}
+
+/* primary — filled with the signal. Hover and press darken by mixing toward
+ * the void rather than by dropping opacity, so the button never goes
+ * translucent over whatever is behind it. */
+.gbtn--primary {
+  background: var(--btn-signal);
+  border-color: var(--btn-signal);
+  color: var(--accent-on);
+}
+
+.gbtn--primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--btn-signal) 84%, var(--void));
+  border-color: color-mix(in oklab, var(--btn-signal) 84%, var(--void));
+}
+
+.gbtn--primary:active:not(:disabled) {
+  background: color-mix(in oklab, var(--btn-signal) 70%, var(--void));
+  border-color: color-mix(in oklab, var(--btn-signal) 70%, var(--void));
+}
+
+/* secondary — the default. Brightens its border up the line ladder and takes
+ * the hover surface; it never adopts a signal. */
+.gbtn--secondary {
+  border-color: var(--line-200);
+  color: var(--ink-200);
+  background: transparent;
+}
+
+.gbtn--secondary:hover:not(:disabled) {
+  border-color: var(--line-100);
+  color: var(--ink-100);
+  background: var(--surface-3);
+}
+
+/* ghost — no border at all; the label alone. */
+.gbtn--ghost {
+  border-color: transparent;
+  color: var(--ink-300);
+  background: transparent;
+}
+
+.gbtn--ghost:hover:not(:disabled) {
+  color: var(--btn-signal);
+}
+
+/* signal — outlined in the signal, filling to its tint on hover. */
+.gbtn--signal {
+  border-color: var(--btn-signal);
+  color: var(--btn-signal);
+  background: transparent;
+}
+
+.gbtn--signal:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--btn-signal) 14%, transparent);
+}
+
+/* =========================================================================
+ * Badge
+ * ========================================================================= */
+
+.gbadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  height: 20px;
+  padding: 0 var(--space-2);
+  border: var(--stroke-1) solid currentColor;
+  border-radius: var(--radius-1);
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+  /* A badge that wraps reflows the header row it lives in. */
+  white-space: nowrap;
+}
+
+/* =========================================================================
+ * KeyCap
+ * ========================================================================= */
+
+.gkey {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0 var(--space-2);
+  border: var(--stroke-1) solid var(--line-200);
+  border-radius: var(--radius-1);
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  color: var(--ink-200);
+  white-space: nowrap;
+  transition: var(--transition-state);
+}
+
+/* min-width tracks the height so one glyph reads as a key, not a pill. */
+.gkey--sm { height: var(--control-h-sm); min-width: var(--control-h-sm); }
+.gkey--md { height: var(--control-h-md); min-width: var(--control-h-md); }
+.gkey--lg { height: var(--control-h-lg); min-width: var(--control-h-lg); }
+
+.gkey[data-active] {
+  background: var(--signal-amber);
+  border-color: var(--signal-amber);
+  color: var(--ink-invert);
+}
+
+/* =========================================================================
+ * IndexCounter
+ * ========================================================================= */
+
+.gindex {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-mono);
+  line-height: var(--leading-flat);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-300);
+}
+
+.gindex__sep {
+  padding: 0 0.4em;
+  opacity: 0.5;
+}
+
+/* =========================================================================
+ * Panel
+ *
+ * 2px border, 8px radius, --surface-1. The header is 10px/14px with a 26px
+ * min-height and its own 2px bottom border in the panel's colour.
+ * ========================================================================= */
+
+.gpanel {
+  display: flex;
+  flex-direction: column;
+  border-style: solid;
+  border-radius: var(--panel-radius-outer);
+  background: var(--surface-1);
+  /* The header fill has to stop at the rounded corner rather than square it
+   * off; clipping the panel is what makes a filled header follow the radius. */
+  overflow: hidden;
+}
+
+.gpanel[data-width='contained'] {
+  max-width: 960px;
+}
+
+/* Bare — the raw scrollback dump. Not "a panel with no border": no border, no
+ * fill, no radius, no header. */
+.gpanel--bare {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.gpanel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--panel-header-h);
+  padding: var(--panel-header-pad);
+  border-bottom-style: solid;
+}
+
+.gpanel__heading {
+  flex: none;
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--type-panel-size);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+  color: var(--ink-200);
+}
+
+/* A filled header inverts everything sitting on it — heading, leader and
+ * counters alike. The leader has to go too: a --line-300 dotted rule over a
+ * --line-100 fill is invisible. */
+.gpanel[data-filled] .gpanel__head {
+  color: var(--ink-invert);
+}
+
+.gpanel[data-filled] .gpanel__heading,
+.gpanel[data-filled] .gindex {
+  color: var(--ink-invert);
+}
+
+.gpanel[data-filled] .gpanel__head > .leader {
+  border-top-color: var(--ink-invert);
+  opacity: 0.4;
+}
+
+/* A badge on a filled header has to invert with everything else around it.
+ *
+ * Its own signal is set inline from the tone, which is right on an unfilled
+ * header and exactly wrong here: LATEST would sit at --line-200 on a --line-100
+ * fill, and EXIT 1 would be red on red. Both are the badge announcing a state
+ * that is already being announced by the fill it is standing on, so on a filled
+ * header the badge stops carrying the colour and becomes an outline in the
+ * inverted ink instead. !important is unavoidable — the alternative is
+ * threading "am I on a filled header" through Badge as a prop, which would make
+ * every caller responsible for a fact only the panel knows. */
+.gpanel[data-filled] .gpanel__head .gbadge {
+  color: var(--ink-invert) !important;
+  border-color: var(--ink-invert) !important;
+  background: transparent !important;
+}
+
+/* Actions likewise: a ghost button's --ink-300 is unreadable on a bright fill. */
+.gpanel[data-filled] .gpanel__head .gbtn--ghost {
+  color: var(--ink-invert);
+  opacity: 0.75;
+}
+
+.gpanel[data-filled] .gpanel__head .gbtn--ghost:hover:not(:disabled) {
+  color: var(--ink-invert);
+  opacity: 1;
+}
+
+/* A signal-outlined button (the running block's ⌃C CANCEL) never shares a
+ * header with a fill — running blocks are not filled — but a failed block that
+ * is still being cancelled could, so it inverts too. */
+.gpanel[data-filled] .gpanel__head .gbtn--signal {
+  color: var(--ink-invert);
+  border-color: var(--ink-invert);
+}
+
+.gpanel__body {
+  padding: var(--panel-pad);
+  min-width: 0;
+}
+
+.gpanel__body[data-flush] {
+  padding: 0;
+}
+
+/* The content well: a 1px --line-400 box on --surface-2 inside a panel body. */
+.gwell {
+  border: var(--stroke-1) solid var(--line-400);
+  border-radius: var(--panel-radius-inner);
+  background: var(--surface-2);
+  padding: var(--space-3);
+  min-width: 0;
+}
+
+/* =========================================================================
+ * Frame
+ * ========================================================================= */
+
+.gframe {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.gframe__inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* =========================================================================
+ * Prompt
+ *
+ * `gap: 0.6ch` and baseline alignment, so the parts sit as one line of shell
+ * text rather than as separate labelled fields.
+ * ========================================================================= */
+
+.gprompt {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6ch;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  letter-spacing: var(--track-mono);
+  line-height: var(--leading-snug);
+  min-width: 0;
+}
+
+.gprompt--xs { font-size: var(--text-xs); }
+.gprompt--sm { font-size: var(--text-sm); }
+
+.gprompt__user { color: var(--prompt-signal); }
+.gprompt__host { color: var(--ink-300); }
+.gprompt__path { color: var(--ink-200); }
+.gprompt__sigil { color: var(--ink-300); }
+
+.gprompt__cmd {
+  color: var(--ink-100);
+  word-break: break-word;
+  user-select: text;
+}
+
+/* The ghost is Tab-acceptable, which makes it load-bearing copy: --ink-300,
+ * never --ink-400. */
+.gprompt__ghost {
+  color: var(--ink-300);
+  margin-left: -0.6ch;
+  white-space: pre;
+  pointer-events: none;
+}
+
+/* A static block. It does not blink. */
+.gprompt__caret {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  flex: none;
+  background: var(--prompt-signal);
+  transform: translateY(0.12em);
+}
+
+.gprompt__gap { flex: 1; min-width: var(--space-3); }
+
+.gprompt__meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================================
+ * TerminalLine
+ * ========================================================================= */
+
+.gline {
+  display: flex;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-mono);
+  line-height: var(--leading-block);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.gline__gutter {
+  flex: none;
+  min-width: 4ch;
+  text-align: right;
+  color: var(--line-300);
+  user-select: none;
+}
+
+.gline__text { min-width: 0; }
+
+/* =========================================================================
+ * StatusBar
+ *
+ * Dash fill, not a dotted border — the dotted leader belongs to PanelHeader.
+ * ========================================================================= */
+
+.gstatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: var(--stroke-1) solid;
+  background: var(--surface-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-mono);
+  line-height: var(--leading-flat);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.gstatus__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+}
+
+.gstatus__fill {
+  flex: 1;
+  overflow: hidden;
+  opacity: 0.55;
+  user-select: none;
+}
+
+/* =========================================================================
+ * Tabs
+ * ========================================================================= */
+
+.gtabs {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-5);
+  border-bottom: var(--stroke-1) solid var(--line-300);
+}
+
+.gtabs__item {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h-md);
+  padding: 0 0 var(--space-2);
+  /* Pulls the 2px marker up onto the container's 1px baseline, so it replaces
+   * the rule instead of thickening it. */
+  margin-bottom: -1px;
+  border-bottom: var(--stroke-2) solid transparent;
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+  color: var(--ink-300);
+  transition: var(--transition-state);
+}
+
+.gtabs__item:hover { color: var(--ink-100); }
+
+.gtabs__item[data-active] {
+  color: var(--signal-amber);
+  border-bottom-color: var(--signal-amber);
+}
+
+/* =========================================================================
+ * SideNav
+ * ========================================================================= */
+
+.gnav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  flex: none;
+  width: 200px;
+  padding: var(--space-4) 0;
+  border-right: var(--stroke-1) solid var(--line-300);
+  overflow-y: auto;
+}
+
+.gnav__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.gnav__seclabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-2);
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+
+.gnav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-4);
+  /* Reserved in transparent on inactive rows so selecting one cannot shift its
+   * label sideways. */
+  border-left: var(--stroke-2) solid transparent;
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--ink-200);
+  text-align: left;
+  transition: var(--transition-state);
+}
+
+.gnav__item:hover { background: var(--surface-3); color: var(--ink-100); }
+
+.gnav__item[data-active] {
+  border-left-color: var(--signal-amber);
+  background: var(--accent-fill);
+  color: var(--signal-amber);
+}
+
+.gnav__label { flex: 1; min-width: 0; }
+
+.gnav__count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-300);
+}
+
+/* =========================================================================
+ * Pagination
+ * ========================================================================= */
+
+.gpage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+}
+
+.gpage__label {
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+
+/* Square, both axes at --control-h-sm. */
+.gpage__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  flex: none;
+  border: var(--stroke-1) solid var(--line-200);
+  border-radius: var(--radius-0);
+  background: transparent;
+  color: var(--ink-200);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  transition: var(--transition-state);
+}
+
+.gpage__arrow:hover:not(:disabled) {
+  border-color: var(--line-100);
+  color: var(--ink-100);
+  background: var(--surface-3);
+}
+
+.gpage__arrow:disabled {
+  border-color: var(--line-400);
+  color: var(--ink-400);
+}
+
+.gpage__readout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 7ch;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-100);
+}
+
+.gpage__sep { padding: 0 0.4em; color: var(--ink-300); }
+
+/* =========================================================================
+ * Dialog
+ * ========================================================================= */
+
+.gdialog__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--scrim);
+  /* The only blur in the system, and only here. */
+  backdrop-filter: blur(var(--scrim-blur));
+  -webkit-backdrop-filter: blur(var(--scrim-blur));
+}
+
+.gdialog {
+  max-height: 100%;
+}
+
+.gdialog .gframe__inner {
+  background: var(--surface-1);
+}
+
+.gdialog__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-1) solid;
+}
+
+.gdialog__title {
+  flex: none;
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+}
+
+.gdialog__close {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-flat);
+  color: var(--ink-300);
+  transition: var(--transition-state);
+}
+
+.gdialog__close:hover { color: var(--ink-100); }
+
+.gdialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--ink-200);
+  line-height: var(--leading-normal);
+}
+
+.gdialog__body[data-flush] { padding: 0; }
+
+.gdialog__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex: none;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--stroke-1) solid var(--line-300);
+}
+
+/* =========================================================================
+ * Alert
+ * ========================================================================= */
+
+.galert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--stroke-1) solid;
+  border-radius: var(--radius-0);
+}
+
+/* Optical alignment with the cap height of the title beside it. */
+.galert__icon { flex: none; padding-top: 1px; }
+
+.galert__main { flex: 1; min-width: 0; }
+
+.galert__title {
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+}
+
+/* Machine truth: the raw error, in mono and lowercase, under a capped title.
+ *
+ * pre-wrap because the shell's own line breaks are part of what it said — a
+ * message and its detail are two lines in the terminal and must stay two here. */
+.galert__body {
+  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-mono);
+  line-height: var(--leading-normal);
+  color: var(--ink-200);
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.galert__action { flex: none; }
+
+/* =========================================================================
+ * Table
+ * ========================================================================= */
+
+.gtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-mono);
+}
+
+.gtable[data-dense] { font-size: var(--text-2xs); }
+
+.gtable th {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--stroke-1) solid var(--line-200);
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--ink-300);
+  white-space: nowrap;
+  text-align: left;
+}
+
+.gtable th[data-align='right'] { text-align: right; }
+
+.gtable td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--stroke-1) solid var(--line-400);
+  color: var(--ink-200);
+  /* Reserved on every first cell so selecting a row cannot shift its text. */
+  border-left: var(--stroke-2) solid transparent;
+  user-select: text;
+}
+
+.gtable td:not([data-first]) { border-left: none; }
+
+.gtable td[data-tone='meta'] { color: var(--ink-300); }
+
+.gtable td[data-align='right'] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.gtable[data-zebra] tbody tr:nth-child(odd) td { background: var(--surface-2); }
+
+.gtable[data-clickable] tbody tr:hover td { background: var(--surface-3); }
+
+.gtable tbody tr[data-selected] td { background: var(--accent-fill); }
+.gtable tbody tr[data-selected] td[data-first] { border-left-color: var(--signal-amber); }
+
+.gtable__empty {
+  padding: var(--space-6);
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+
+/* =========================================================================
+ * Field
+ * ========================================================================= */
+
+.gfield {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.gfield__label {
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-label);
+  line-height: var(--leading-flat);
+  text-transform: uppercase;
+  color: var(--ink-200);
+}
+
+.gfield__label[data-error] { color: var(--signal-red); }
+
+.gfield__req { color: var(--signal-amber); margin-left: 2px; }
+
+/* The hint is mono because it describes what the machine will do. */
+.gfield__hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-mono);
+  line-height: var(--leading-normal);
+  color: var(--ink-300);
+}
+
+.gfield__hint[data-error] { color: var(--signal-red); }
+
+/* =========================================================================
+ * Switch — 40×20 track, square 14×14 knob, hard snap.
+ * ========================================================================= */
+
+.gswitch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: none;
+  width: 40px;
+  height: 20px;
+  padding: 2px;
+  border: var(--stroke-1) solid var(--field-border);
+  border-radius: var(--radius-0);
+  background: var(--field-bg);
+  transition: var(--transition-state);
+}
+
+.gswitch[data-checked] {
+  justify-content: flex-end;
+  border-color: var(--switch-signal);
+}
+
+.gswitch__knob {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  background: var(--line-200);
+  /* Colour only. The knob's position is a layout fact, not an animation. */
+  transition: background-color var(--dur-state) var(--ease-state);
+}
+
+.gswitch[data-checked] .gswitch__knob { background: var(--switch-signal); }
+
+.gswitch:disabled { border-color: var(--line-400); }
+.gswitch:disabled .gswitch__knob { background: var(--ink-400); }
+
+/* =========================================================================
+ * Select
+ * ========================================================================= */
+
+.gselect {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.gselect__input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: var(--control-h-md);
+  padding: 0 var(--space-8) 0 var(--space-3);
+  border: var(--stroke-1) solid var(--field-border);
+  border-radius: var(--radius-0);
+  background: var(--field-bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-mono);
+  color: var(--ink-100);
+  transition: var(--transition-state);
+}
+
+.gselect__input:hover { border-color: var(--field-border-hover); }
+.gselect__input:focus { border-color: var(--border-focus); outline: none; }
+.gselect[data-invalid] .gselect__input { border-color: var(--signal-red); }
+
+/* A square cell pinned right, divided by a hairline. Decoration over the real
+ * <select>, so the whole control stays one hit target. */
+.gselect__caret {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  border-left: var(--stroke-1) solid var(--line-300);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-300);
+  pointer-events: none;
+}
+
+/* The option list is drawn by macOS, which paints it light by default. */
+.gselect__input option {
+  background: var(--surface-2);
+  color: var(--ink-100);
+}
+
+/* =========================================================================
+ * Stepper
+ * ========================================================================= */
+
+.gstep {
+  display: inline-flex;
+  align-items: stretch;
+  flex: none;
+  width: 132px;
+  height: var(--control-h-md);
+  border: var(--stroke-1) solid var(--line-300);
+  border-radius: var(--radius-0);
+}
+
+.gstep__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-md);
+  flex: none;
+  color: var(--ink-300);
+  transition: var(--transition-state);
+}
+
+.gstep__btn:hover:not(:disabled) {
+  color: var(--signal-amber);
+  background: var(--surface-3);
+}
+
+.gstep__btn:disabled { color: var(--ink-400); }
+
+.gstep__value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-100);
+}
+
+.gstep__unit { color: var(--ink-300); }
+
+/* =========================================================================
+ * Wordmark
+ * ========================================================================= */
+
+.gmark {
+  display: inline-flex;
+  align-items: baseline;
+  flex: none;
+  line-height: var(--leading-flat);
+}
+
+.gmark__name {
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--ink-100);
+}
+
+/* Mono, lowercase, amber — the one lowercase thing in the chrome. The negative
+ * margin absorbs the trailing letter-space hanging off the final R. */
+.gmark__ext {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-regular);
+  color: var(--signal-amber);
+  margin-left: -0.28em;
+}

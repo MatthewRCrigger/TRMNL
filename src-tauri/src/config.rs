@@ -2,7 +2,7 @@
 //!
 //! The spec puts config at `~/.config/grid/config.toml` and requires that
 //! settings save immediately — there is no Save button. We store JSON at
-//! `~/.config/trmnl/config.json` instead: the frontend owns the shape of this
+//! `~/.config/crggr/config.json` instead: the frontend owns the shape of this
 //! blob, and round-tripping arbitrary nested UI state through TOML buys nothing.
 //! The footer string in Settings should reflect whatever path `config_path`
 //! returns rather than a hardcoded one.
@@ -23,7 +23,45 @@ pub fn config_dir() -> PathBuf {
                 .unwrap_or_else(|| PathBuf::from("/tmp"));
             home.join(".config")
         });
-    base.join("trmnl")
+    base.join("crggr")
+}
+
+/// The pre-rename config directory, migrated from on first launch.
+fn legacy_config_dir() -> PathBuf {
+    config_dir().with_file_name("trmnl")
+}
+
+/// Move a `~/.config/trmnl` directory to `~/.config/crggr`, once.
+///
+/// The app was TRMNL before it was CRGGR.sh, and the config directory holds
+/// every profile, keybinding and saved workspace — so renaming the directory
+/// without moving what is in it silently loses all of them, and the app comes
+/// back looking like a fresh install.
+///
+/// A rename rather than a copy: it is atomic on the same filesystem, so there is
+/// no window where both exist and the app might read the stale one. Failure is
+/// deliberately quiet — a missing legacy directory is the normal case on any
+/// machine that never ran the old build, and an unwritable one is not worth
+/// refusing to launch over when the defaults are perfectly usable.
+pub fn migrate_legacy_config() {
+    let new = config_dir();
+    if new.exists() {
+        return;
+    }
+
+    let old = legacy_config_dir();
+    if !old.is_dir() {
+        return;
+    }
+
+    if let Some(parent) = new.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    match std::fs::rename(&old, &new) {
+        Ok(()) => eprintln!("crggr: migrated config from {} to {}", old.display(), new.display()),
+        Err(e) => eprintln!("crggr: could not migrate config from {}: {e}", old.display()),
+    }
 }
 
 pub fn config_path() -> PathBuf {

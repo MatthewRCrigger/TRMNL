@@ -56,45 +56,38 @@ export function TerminalView({ sessionId, backlog, subscribe, onData, onResize, 
     const host = hostRef.current
     if (!host) return
 
+    /**
+     * A token, read straight off :root.
+     *
+     * The probe-element trick this used to need is gone with the accent system:
+     * GRID's colours are plain hex literals rather than relative colour syntax,
+     * so `getPropertyValue` returns something xterm can parse directly. A token
+     * defined as `oklch(from …)` would have come back as that literal function
+     * string and had to be resolved through a real element first.
+     */
     const styles = getComputedStyle(document.documentElement)
     const read = (name: string, fallback: string) =>
       styles.getPropertyValue(name).trim() || fallback
 
-    /**
-     * A colour token, resolved to something xterm can parse.
-     *
-     * Custom properties come back from `getPropertyValue` as their unresolved
-     * text, so a token defined with relative colour syntax — `--ac` is
-     * `oklch(from …)` — arrives as that literal function string, which xterm
-     * cannot read. Assigning it to a real element and reading back `color`
-     * makes the engine do the substitution and hand back an actual colour.
-     */
-    const readColor = (name: string, fallback: string) => {
-      const probe = document.createElement('span')
-      probe.style.color = `var(${name})`
-      probe.style.display = 'none'
-      document.body.appendChild(probe)
-      const resolved = getComputedStyle(probe).color
-      probe.remove()
-      return resolved || fallback
-    }
-
     const term = new Terminal({
       allowProposedApi: true,
       convertEol: false,
+      // The one blink in the build, and it is not ours: this is a real cursor
+      // in a real terminal, where programs expect it and users read it as the
+      // input point. GRID's stillness rule governs chrome, not the emulator.
       cursorBlink: true,
       cursorStyle: 'block',
-      fontFamily: read('--mono', 'ui-monospace, monospace'),
-      fontSize: 12,
-      lineHeight: 1.35,
-      // Match the block stream's palette so the takeover does not read as a
-      // different application.
+      fontFamily: read('--font-mono', 'ui-monospace, monospace'),
+      fontSize: 13,
+      lineHeight: 1.65,
+      // Wired to the same tokens as everything else, so a takeover does not
+      // read as a different application.
       theme: {
-        background: readColor('--bg', '#07090d'),
-        foreground: readColor('--fg', '#e8eef2'),
-        cursor: readColor('--ac', '#37e0f5'),
-        cursorAccent: readColor('--bg', '#07090d'),
-        selectionBackground: 'rgba(120,180,200,0.3)',
+        background: read('--surface-0', '#000000'),
+        foreground: read('--ink-200', '#a8bcc6'),
+        cursor: read('--signal-amber', '#f6c56a'),
+        cursorAccent: read('--surface-0', '#000000'),
+        selectionBackground: 'rgba(246,197,106,0.24)',
       },
       scrollback: 10_000,
     })

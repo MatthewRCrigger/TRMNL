@@ -1,8 +1,15 @@
-/** One pane: header, block stream, composer. */
+/** One pane: tabs, header, block stream, composer.
+ *
+ * Depth here is line brightness and surface fill, never a shadow or a border
+ * weight: the focused pane sits on --void with an amber label and an --ink-100
+ * command, the unfocused one on --surface-1 with everything a step dimmer. That
+ * is the whole difference — no glow, no scale, no outline.
+ */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { getPty, useStore, type PaneId } from '../state/store'
+import { Alert, Badge, Button, Frame, Icon, Panel } from './grid'
 import { Block } from './Block'
 import { Composer } from './Composer'
 import { PaneTabs } from './PaneTabs'
@@ -23,6 +30,22 @@ export function Pane({ pane, showClose }: Props) {
   const paneMaximized = useStore((s) => s.paneMaximized)
   const host = useStore((s) => s.host)
   const foldThreshold = useStore((s) => s.settingsValues.foldThreshold)
+  const panel = useStore((s) => s.settingsValues.panel)
+  const scrollbackCap = useStore((s) => s.settingsValues.scrollbackCap)
+
+  /**
+   * Above this many lines a block stops being an addressable unit and becomes
+   * a scrollback spill, so it drops its frame entirely.
+   *
+   * Deliberately a fraction of the scrollback cap rather than the cap itself.
+   * `PtySession` trims each block's lines *to* the cap (see the slice in
+   * `session.ts`), so `lines.length` can never exceed it and a threshold set
+   * there would never fire — the raw-dump case would be unreachable and every
+   * dump would still get a frame. A quarter of the buffer is comfortably past
+   * "a command that printed a lot" while staying well inside what the session
+   * actually retains.
+   */
+  const rawDumpThreshold = Math.max(200, Math.floor(scrollbackCap / 4))
   const paneState = useStore((s) => s.panes[pane])
   const sessions = useStore((s) => s.sessions)
   const setFocus = useStore((s) => s.setFocus)
@@ -61,6 +84,17 @@ export function Pane({ pane, showClose }: Props) {
   const blockCount = session?.blocks.length ?? 0
   const lastLineCount = session?.blocks.at(-1)?.lines.length ?? 0
 
+  // Growing the window can bring the bottom of the content back into view
+  // without a scroll event ever firing — re-check "at bottom" whenever the
+  // scroll container's own size changes, not just when its content does.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(onScroll)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [onScroll])
+
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el || !stick.current) return
@@ -86,27 +120,35 @@ export function Pane({ pane, showClose }: Props) {
     if (session?.takeover) return
 
     const report = () => {
-      // Approximate the cell box from the block output metrics: 12px Geist Mono
-      // is ~7.2px wide, and line-height comes from the density token.
+      // Approximate the cell box from the block output metrics. Space Mono is a
+      // wider face than the Geist Mono this replaced — 0.6em advance at 13px,
+      // so ~7.8px — and leading comes from the density token.
       const style = getComputedStyle(el)
-      const lh = Number.parseFloat(style.getPropertyValue('--lh')) || 1.62
-      const cols = Math.max(20, Math.floor((el.clientWidth - 32) / 7.2))
-      const rows = Math.max(6, Math.floor(el.clientHeight / (12 * lh)))
+      const lh = Number.parseFloat(style.getPropertyValue('--leading-block')) || 1.65
+      const cols = Math.max(20, Math.floor((el.clientWidth - 32) / 7.8))
+      const rows = Math.max(6, Math.floor(el.clientHeight / (13 * lh)))
       void getPty(sessionId)?.resize(cols, rows)
       setSessionSize(sessionId, cols, rows)
+      // The pane growing can bring the bottom of the stream back into view
+      // without a scroll event ever firing — this observer already fires on
+      // every window resize, so piggyback the same re-check here rather than
+      // trust the scroll container's own (WKWebView-flaky) ResizeObserver alone.
+      onScroll()
     }
 
     report()
     const ro = new ResizeObserver(report)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [sessionId, session?.takeover, setSessionSize])
+  }, [sessionId, session?.takeover, setSessionSize, onScroll])
 
   if (!session || !sessionId) {
     return <div className="pane" data-focused={focused} />
   }
 
-  const edgeColor = focused ? 'var(--ac)' : 'var(--bd2)'
+  const user = shortUser(host?.home)
+  const shortHost = session.host === 'local' ? hostName(host?.hostname) : session.host
+  const path = prettyPath(session.cwd, host?.home)
 
   return (
     <div
@@ -119,48 +161,43 @@ export function Pane({ pane, showClose }: Props) {
       <PaneTabs pane={pane} />
 
       <header className="pane__head">
-        <span className="pane__sq" style={{ background: edgeColor }} />
-        <span className="pane__cwd" style={{ color: focused ? 'var(--fg)' : 'var(--fgd)' }}>
-          {prettyPath(session.cwd, host?.home)}
-        </span>
-        {session.branch && <span className="pane__branch">⑂ {session.branch}</span>}
-        {/* A remote pane names its host: which machine you are typing into is the
-            single most consequential thing to be wrong about. */}
+        <span className="pane__label">{focused ? 'PANE .FOCUS' : 'PANE .IDLE'}</span>
+        <span className="pane__cwd">{path}</span>
+        {session.branch && <span className="pane__meta">⑂ {session.branch}</span>}
+        {/* A remote pane names its host: which machine you are typing into is
+            the single most consequential thing to be wrong about. */}
         {session.host !== 'local' && (
-          <span className="pane__remote">⇄ {session.host}</span>
+          <span className="pane__meta pane__meta--remote">
+            <Icon name="globe" size={12} />
+            {session.host}
+          </span>
         )}
         {/* Only the focused pane can be maximized, so this only ever appears
             here — it is the one visible sign that a sibling pane is hidden
             rather than closed. */}
         {split && paneMaximized && focused && (
-          <span className="pane__branch" title="⌘⇧M to restore the split">▸◂ MAXIMIZED</span>
+          <span className="pane__meta" title="⌘⇧M to restore the split">
+            ▸◂ MAXIMIZED
+          </span>
         )}
-        <span className="rule" />
-        <span className="pane__status">{focused ? 'FOCUSED' : 'IDLE'}</span>
+        <span className="leader" />
+        <Badge tone={focused ? 'accent' : 'neutral'}>{focused ? 'FOCUSED' : 'IDLE'}</Badge>
         {showClose && (
-          <button
-            className="pane__close is-btn no-drag"
-            onClick={closePane}
-            type="button"
-            aria-label="Close pane"
-          >
-            ✕
+          <button className="pane__close no-drag" onClick={closePane} type="button" aria-label="Close pane">
+            <Icon name="x" size={12} />
           </button>
         )}
       </header>
 
       <div className="pane__body" ref={bodyRef}>
         <div className="pane__stream" ref={scrollRef} onScroll={onScroll}>
-          {/* The masthead stays at the top of the stream for the life of the
-              session rather than being swapped out by the first command, so
-              scrolling back always returns to where the session started. Its
-              suggestions collapse away once there is history — they are a
-              cold-start affordance, not permanent chrome. */}
           <Welcome
             session={session}
             host={host}
             compact={pane === 'b'}
             started={session.blocks.length > 0}
+            panel={panel}
+            total={session.blocks.length}
             onRun={(cmd) => void runCommand(cmd, pane)}
           />
           {session.blocks.map((block, i) => (
@@ -169,6 +206,11 @@ export function Pane({ pane, showClose }: Props) {
               block={block}
               foldThreshold={foldThreshold}
               isLatest={i === session.blocks.length - 1}
+              panel={panel}
+              rawDumpThreshold={rawDumpThreshold}
+              cwd={prettyPath(block.cwd, host?.home)}
+              user={user}
+              host={shortHost}
               onCancel={() => void cancelCurrent(sessionId)}
               onRerun={(cmd) => void runCommand(cmd, pane)}
               onToggleFold={() => toggleBlockFold(sessionId, block.id)}
@@ -177,9 +219,9 @@ export function Pane({ pane, showClose }: Props) {
         </div>
 
         {showJump && !session.takeover && (
-          <button className="pane__jump no-drag" onClick={jumpToLatest} type="button">
+          <Button className="pane__jump no-drag" size="sm" variant="secondary" onClick={jumpToLatest}>
             ↓ JUMP TO LATEST
-          </button>
+          </Button>
         )}
 
         {/* An interactive program gets a real terminal in an overlay above the
@@ -193,66 +235,80 @@ export function Pane({ pane, showClose }: Props) {
             frozen on its last frame, until the user dismisses it on purpose. */}
         {session.takeover && pty && (
           <div className="takeover">
-            <div className="takeover__panel">
-              <span className="bracket bracket--tl" style={{ width: 11, height: 11 }} />
-              <span className="bracket bracket--br" style={{ width: 11, height: 11 }} />
-
-              <div className="takeover__head">
-                <span
-                  className="dot"
-                  style={{ color: session.takeover === 'finished' ? 'var(--fgdd)' : 'var(--warn)' }}
+            <Panel
+              className="takeover__panel"
+              heading={session.takeover === 'finished' ? 'SESSION .FINISHED' : 'INTERACTIVE .SESSION'}
+              // Cyan is "attached and streaming". A finished takeover has
+              // nothing live about it, so it drops to the neutral frame rather
+              // than keep claiming a signal it no longer earns.
+              panelColor={session.takeover === 'finished' ? null : 'var(--signal-cyan)'}
+              contentBorder={false}
+              headerMeta={<span className="takeover__cmd">{session.blocks.at(-1)?.cmd ?? ''}</span>}
+              headerRight={
+                <>
+                  <Badge
+                    tone={session.takeover === 'finished' ? 'neutral' : 'live'}
+                    dot={session.takeover !== 'finished'}
+                    filled={session.takeover !== 'finished'}
+                  >
+                    {session.takeover === 'finished' ? 'SESSION FINISHED' : 'ATTACHED'}
+                  </Badge>
+                  {session.takeover === 'finished' ? (
+                    // The program is already gone; this just puts the pane back
+                    // to the block view whenever the user is done reading.
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => dismissTakeover(sessionId)}
+                      title="Close and return to the block view"
+                    >
+                      EXIT
+                    </Button>
+                  ) : (
+                    // Same action as ⌃C in the terminal below — a second, more
+                    // discoverable way to reach it, not a stronger kill. Most
+                    // people reaching for this want out of the one command, not
+                    // the whole session, so it stops there.
+                    <Button
+                      size="sm"
+                      variant="signal"
+                      tone="danger"
+                      onClick={() => void cancelCurrent(sessionId)}
+                      title="Send ⌃C to the running program"
+                    >
+                      ⌃C EXIT
+                    </Button>
+                  )}
+                </>
+              }
+            >
+              {/* The grid gets its own double frame at --stroke-1: inside the
+                  window's 2px double frame, a second 2px one would be the
+                  corduroy the single-hairline rule exists to prevent. */}
+              <Frame
+                weight="hairline"
+                color={session.takeover === 'finished' ? 'var(--line-300)' : 'var(--live)'}
+                pad="var(--space-3)"
+                className="takeover__frame"
+              >
+                <TerminalView
+                  key={`${sessionId}-takeover`}
+                  sessionId={sessionId}
+                  backlog={pty.getTakeoverBacklog()}
+                  subscribe={(handler) => pty.onRaw(handler)}
+                  onData={(data) => {
+                    if (session.takeover === 'finished') return
+                    void pty.write(data)
+                  }}
+                  onResize={(cols, rows) => {
+                    if (session.takeover === 'finished') return
+                    void pty.resize(cols, rows)
+                    setSessionSize(sessionId, cols, rows)
+                  }}
+                  focused={focused}
                 />
-                <span className="micro">
-                  {session.takeover === 'finished' ? 'SESSION FINISHED' : 'INTERACTIVE SESSION'}
-                </span>
-                <span className="takeover__cmd">
-                  {session.blocks.at(-1)?.cmd ?? ''}
-                </span>
-                <span className="rule" />
-                {session.takeover === 'finished' ? (
-                  // The program is already gone; this just puts the pane back
-                  // to the block view whenever the user is done reading.
-                  <button
-                    className="block__cancel is-btn no-drag"
-                    onClick={() => dismissTakeover(sessionId)}
-                    type="button"
-                    title="Close and return to the block view"
-                  >
-                    EXIT
-                  </button>
-                ) : (
-                  // Same action as ⌃C in the terminal below — this is a second,
-                  // more discoverable way to reach it, not a stronger kill. Most
-                  // people reaching for this want out of the one command, not the
-                  // whole session, so it stops there rather than closing the pane.
-                  <button
-                    className="block__cancel is-btn is-btn--danger no-drag"
-                    onClick={() => void cancelCurrent(sessionId)}
-                    type="button"
-                    title="Send ⌃C to the running program"
-                  >
-                    ⌃C EXIT
-                  </button>
-                )}
-              </div>
-
-              <TerminalView
-                key={`${sessionId}-takeover`}
-                sessionId={sessionId}
-                backlog={pty.getTakeoverBacklog()}
-                subscribe={(handler) => pty.onRaw(handler)}
-                onData={(data) => {
-                  if (session.takeover === 'finished') return
-                  void pty.write(data)
-                }}
-                onResize={(cols, rows) => {
-                  if (session.takeover === 'finished') return
-                  void pty.resize(cols, rows)
-                  setSessionSize(sessionId, cols, rows)
-                }}
-                focused={focused}
-              />
-            </div>
+              </Frame>
+            </Panel>
           </div>
         )}
       </div>
@@ -261,41 +317,47 @@ export function Pane({ pane, showClose }: Props) {
           looks ready and every command hangs on RUNNING. Say so instead, and
           offer the one action that actually helps. */}
       {session.failed && (
-        <div className="pane__dead">
-          <span className="dot" style={{ color: 'var(--err)' }} />
-          <span className="micro">SHELL NOT RUNNING</span>
-          <span className="pane__deadwhy">{session.failed}</span>
-          <span className="rule" />
-          <button
-            className="pane__deadact no-drag"
-            type="button"
-            onClick={() => void newSession(session.profileId, pane, { cwd: session.cwd })}
-          >
-            NEW SESSION
-          </button>
-        </div>
+        <Alert
+          className="pane__dead"
+          tone="danger"
+          title="SHELL NOT RUNNING"
+          icon="triangle-alert"
+          action={
+            <Button
+              size="sm"
+              variant="primary"
+              tone="danger"
+              onClick={() => void newSession(session.profileId, pane, { cwd: session.cwd })}
+            >
+              NEW SESSION
+            </Button>
+          }
+        >
+          {session.failed}
+        </Alert>
       )}
 
-      {/* The shell exited on its own (`exit`, ⌃D, the process crashed). The pane
-          used to just go quietly inert here — scrollback intact but nothing
-          telling you the shell was gone, so closing it read as no different
-          from closing a live one. Saying so plainly, and disabling the
-          composer, makes "done" look like "done" instead of "stuck". */}
+      {/* The shell exited on its own (`exit`, ⌃D, the process crashed).
+          Deliberately NEUTRAL, not an error: a clean exit is a shell doing
+          exactly what it was told, and the old build painted a zero exit code in
+          the error colour, which called that a failure. A non-zero code may take
+          the danger treatment. */}
       {!session.failed && session.exited && (
-        <div className="pane__dead">
-          <span className="dot" style={{ color: session.exited.code ? 'var(--err)' : 'var(--fgdd)' }} />
-          <span className="micro">
-            PROCESS EXITED{session.exited.code !== null ? ` (CODE ${session.exited.code})` : ''}
-          </span>
-          <span className="rule" />
-          <button
-            className="pane__deadact no-drag"
-            type="button"
-            onClick={() => void newSession(session.profileId, pane, { cwd: session.cwd })}
-          >
-            NEW SESSION
-          </button>
-        </div>
+        <Alert
+          className="pane__dead"
+          tone={session.exited.code ? 'danger' : 'neutral'}
+          title={`PROCESS EXITED${session.exited.code !== null ? ` (CODE ${session.exited.code})` : ''}`}
+          icon="power"
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void newSession(session.profileId, pane, { cwd: session.cwd })}
+            >
+              NEW SESSION
+            </Button>
+          }
+        />
       )}
 
       {/* Kept mounted during a takeover — anything half-typed survives — but
@@ -306,6 +368,9 @@ export function Pane({ pane, showClose }: Props) {
         focused={focused && !session.takeover && !session.failed && !session.exited}
         disabled={!!session.takeover || !!session.failed || !!session.exited}
         shellLabel={shellLabel(host?.shell)}
+        user={user}
+        host={shortHost}
+        path={path}
         onChange={(v) => setSessionInput(sessionId, v)}
         onSubmit={() => void submitInput(sessionId)}
         onAcceptGhost={() => acceptGhost(sessionId)}
@@ -324,6 +389,18 @@ function prettyPath(path: string, home?: string): string {
     return rest === '' ? '~' : `~${rest}`
   }
   return path
+}
+
+/** The user's short name, taken from the home directory's basename. */
+function shortUser(home?: string): string {
+  if (!home) return 'user'
+  return home.split('/').at(-1) ?? 'user'
+}
+
+/** The host's short name — `crggr-08`, not `crggr-08.local`. */
+function hostName(hostname?: string): string {
+  if (!hostname) return 'local'
+  return hostname.split('.')[0] ?? hostname
 }
 
 function shellLabel(shell?: string): string {

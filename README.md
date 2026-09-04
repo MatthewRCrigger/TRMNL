@@ -1,11 +1,15 @@
-# TRMNL
+# CRGGR.sh
 
-A TRON-inspired terminal for macOS.
+A terminal for macOS, built on the GRID design system.
 
 This is a real terminal — real PTYs, real shells, real ANSI — not a themed
 viewer. The block model sits above the emulator rather than replacing it: each
 command is one addressable unit, with boundaries reported by the shell rather
 than guessed at.
+
+The front end was rebuilt on GRID; the app previously shipped as TRMNL with a
+TRON-derived visual system, and the repository, bundle identifier and config
+directory still carry that name.
 
 **Status: early.** It is used daily by its author and shared with a small group.
 Interfaces and config format may still change between versions.
@@ -14,7 +18,7 @@ Interfaces and config format may still change between versions.
 
 Download the latest `.dmg` from
 [Releases](https://github.com/MatthewRCrigger/TRMNL/releases), open it, and drag
-TRMNL to Applications. Builds are signed and notarized, so they open without a
+CRGGR.sh to Applications. Builds are signed and notarized, so they open without a
 Gatekeeper warning.
 
 **Apple Silicon only** — Intel Macs are not supported and there are no plans to
@@ -26,9 +30,14 @@ To build from source, see [Running it](#running-it).
 
 MIT — see [LICENSE](LICENSE).
 
-The visual system derives from [The Gridcn](https://github.com/educlopez/thegridcn-ui),
-an open-source TRON-inspired shadcn/ui theme. TRMNL uses its `oklch()` token
-values and visual conventions, not its code.
+The visual system is **GRID**, applied from its own handoff. Icons are
+[Lucide](https://lucide.dev) (ISC), inlined so they inherit `currentColor`.
+Type is [Rajdhani](https://fonts.google.com/specimen/Rajdhani) and
+[Space Mono](https://fonts.google.com/specimen/Space+Mono), both OFL, bundled
+locally rather than fetched at paint.
+
+The build previously used [The Gridcn](https://github.com/educlopez/thegridcn-ui)
+for its TRON-derived token values; nothing of it remains.
 
 ---
 
@@ -52,11 +61,11 @@ SwiftUI is good at.
 
 Concretely:
 
-- **The design is a CSS design.** The handoff's token system derives every
-  neutral from one accent via `color-mix(in oklch, …)`, which is what makes the
-  identity switcher recolour the entire interface by changing a single variable.
-  Reproducing that in SwiftUI means hand-writing a colour-derivation layer and
-  re-resolving it through every view. In CSS it is the platform doing the work.
+- **The design is a CSS design.** GRID is a system of hairlines, dotted leaders,
+  tint fills and panels whose borders and header fills carry state. Reproducing
+  a dotted leader that fills the gap in a header row, or a panel whose six
+  toggles compose independently, means hand-rolling layout in SwiftUI that flexbox
+  and `border-style: dotted` do for free.
 - **Text layout is the whole product.** Proportional-width tables, hairline
   rules, tabular numerals, ellipsised paths, wrap behaviour on 10k-line
   scrollback — this is the browser's core competency and decades of its
@@ -85,7 +94,7 @@ and a second browser engine for capabilities this app never uses.
 │  shell_integration.rs writes the OSC 133 hooks, injects them    │
 │  detect.rs            inspects cwd for the welcome state        │
 │  telemetry.rs         real CPU / mem / load / disk / network     │
-│  config.rs            atomic writes to ~/.config/trmnl          │
+│  config.rs            atomic writes to ~/.config/crggr          │
 └────────────────────────┬────────────────────────────────────────┘
                          │  events: pty://data, pty://exit
                          │  commands: pty_spawn, pty_write, …
@@ -189,46 +198,89 @@ prototype's 3-character prefix hack.
 
 ### Design tokens
 
-`src/styles/tokens.css` holds the token set verbatim. The load-bearing property:
-**every neutral derives from `--ac` via `color-mix`**, which is what makes the
-identity switcher recolour the whole interface. Do not replace a derivation with
-a literal.
+`src/styles/tokens.css` is the whole colour system, and every value in it is a
+literal. There is no accent to derive from: **GRID is functionally monochrome**,
+and colour is a *signal* rather than decoration.
 
-Departures from the prototype:
+Five rules govern it, and `src/styles/tokens.test.ts` asserts every one against
+the stylesheets — so the fastest way to learn them is to break one:
 
-1. **Type floor raised to 10px.** The prototype's 8.5–9px chrome labels read at
-   prototype zoom but not on a real display. `--t-micro` / `--t-label` enforce
-   the floor centrally so it cannot drift back down. (Required by the handoff.)
-2. **Traffic lights are native.** macOS draws and manages them via a transparent
-   titlebar. The prototype hand-drew them only because it ran in a browser;
-   reimplementing them would mean owning window drag, zoom, fullscreen, snapping
-   and Mission Control. (Required by the handoff.)
-3. **Glow and scanlines are cut.** The `--gl1`/`--gl2`/`--tgl` glow levels and the
-   CRT scanline overlay are gone, along with their controls in the Appearance
-   popover and Settings. Panel shadows keep their black depth but no accent halo.
-4. **Default identity is USER**, not PROGRAM. `--ac` in `tokens.css` and
-   `DEFAULT_IDENTITY` in `store.ts` must stay in agreement — the CSS value is the
-   pre-hydration fallback, so a mismatch shows as a colour flash on launch. A test
-   pins the two together.
-5. **Five identities, not six.** CLU now carries the gold that was ATHENA's; the
-   old orange CLU is gone. A config that stored `ATHENA` falls back to USER.
+1. **One signal plane.** Hue is the only variable between signals.
+2. **Hierarchy is line brightness, not thickness.** To make a rule read,
+   brighten it; do not thicken it.
+3. **No elevation.** No drop shadows; `--elev-dialog` is the one exception.
+4. **12px is the floor.** There is no literal `font-size` in the stylesheets at
+   all, so it cannot be undercut one rule at a time — which is how the old
+   build's 8.5–10px chrome crept in.
+5. **Two families, split by origin.** Rajdhani for anything a person wrote,
+   Space Mono for anything a system emitted. Casing carries the same split.
 
-### App icon
+The token set is the **applied** one, not GRID's defaults — four rows differ and
+they are the whole visual character of the build: a 2px panel border, a 4px
+frame gap, round corners (8px outer, 4px inner) and a 14px panel heading. The
+round corner is a deliberate override of GRID's own `DESIGN_GUIDE.md`, which
+calls a rounded card a bug; the live theme setting overrides that on purpose, so
+do not "correct" it.
 
-The source of truth is **`trmnl-icon.icon/`**, an Icon Composer bundle (two
-layers: a dark gradient field and the chevron-plus-cursor mark). Tauri cannot
-read `.icon` bundles, so the rasters under `src-tauri/icons/` are generated from
-it. To regenerate after editing the bundle:
+**Traffic lights are native.** macOS draws and manages them via a transparent
+titlebar. Reimplementing them would mean owning window drag, zoom, fullscreen,
+snapping and Mission Control.
+
+### The panel contract
+
+Every panel-bearing surface exposes the same six toggles — `showPanel`,
+`panelBorder`, `headerBorder`, `headerFilled`, `contentBorder`, `panelColor` —
+as **real props**, not one `bordered` boolean. That is what lets the block stream
+vary them independently, which is the core of the design:
+
+| Block state | Colour | Header filled |
+|---|---|---|
+| Settled, exit 0 | unset → `--line-300` | no |
+| Latest | unset → `--line-100` | **yes** |
+| Non-zero exit | red | **yes** |
+| Running / live | cyan | no |
+| Raw scrollback dump | *no panel at all* | — |
+
+Exit status is not a chip bolted onto a header; it *is* the panel's border and
+header fill. See `blockPanel` in `src/term/types.ts`. `headerFilled` is reserved
+for the block you are reading — the latest plus a failure is the intended maximum
+in one viewport.
+
+The **double frame** (outer line, a gap of void, inner line) is reserved for the
+outermost container of a view. The window has one and a dialog has one; inside
+either, single hairlines only, or the screen turns to corduroy.
+
+### App icon and installer
+
+The icon's source of truth is **`crggr-sh.icon/`**, an Icon Composer bundle.
+Tauri cannot read `.icon` bundles, so the rasters under `src-tauri/icons/` are
+generated from it — layers passed **bottom-first**, the reverse of how
+`icon.json` lists them:
 
 ```bash
-swift scripts/composite-icon.swift trmnl-icon.icon/Assets/layer-1-field-1024.png trmnl-icon.icon/Assets/layer-2-mark-1024.png /tmp/icon.png
-sips -z 1024 1024 /tmp/icon.png --out src-tauri/icons/icon.png
+swift scripts/composite-icon.swift \
+  crggr-sh.icon/Assets/layer-1-field-1024.png \
+  crggr-sh.icon/Assets/layer-2-mark-1024.png \
+  crggr-sh.icon/Assets/layer-3-accent-1024.png \
+  src-tauri/icons/icon.png
 npx tauri icon src-tauri/icons/icon.png && rm -rf src-tauri/icons/android src-tauri/icons/ios
 ```
 
+The installer background is `src-tauri/dmg/`, wired up in `tauri.conf.json`
+under `bundle.macOS.dmg` together with the window size and both icon positions.
+The artwork frames those positions, so the two have to agree — change one and
+the notches end up somewhere the icons are not.
+
+`scripts/check-dmg-background.sh` checks that agreement, and runs from
+`release.sh` before the build. What it enforces, and why, is in its own header.
+
+The icon's small-size treatments (64, 32, 16) are **not yet authored** — they
+are separate compositions rather than scaled versions, so macOS downsamples the
+full lockup until someone draws them.
+
 ### Config
 
-`~/.config/trmnl/config.json`, written atomically (temp file + rename) because
+`~/.config/crggr/config.json`, written atomically (temp file + rename) because
 settings save on every keystroke and there is no Save button. Stored as JSON
 rather than the handoff's TOML: the frontend owns this blob's shape, and
 round-tripping nested UI state through TOML buys nothing. The Settings footer
@@ -236,11 +288,15 @@ reflects whatever path the backend reports.
 
 ## Deviations from the prototype worth knowing
 
-TRMNL was built against a design handoff document — a written spec with
-screenshots that defined the visual system, the token set, and which states were
-deliberately left undesigned. "The handoff" below refers to that document. It is
-not in this repository, but the decisions it drove are recorded here and in the
-comments, which is what matters for changing the code.
+The app is built against a design handoff — a written spec defining the visual
+system, the token set, and which states are deliberately left undesigned. "The
+handoff" below refers to that document. It is not in this repository, but the
+decisions it drove are recorded here and in the comments, which is what matters
+for changing the code.
+
+The current handoff is the **GRID rebuild**; the deviations below span both it
+and the TRON-derived design that preceded it, since most concern behaviour the
+rebuild did not touch.
 
 - **Auto-scroll sticks to bottom only when already at bottom**, with a
   `↓ JUMP TO LATEST` affordance. The prototype scrolled unconditionally, which
@@ -262,51 +318,64 @@ comments, which is what matters for changing the code.
   floating above the pane, with the block history visible behind.
 - **TAB completion delegates to the shell** rather than reimplementing `compsys`,
   so project-specific completers work.
-- **`ls -l` renders as a table** — a fifth renderer, on the same hairline grid as
-  the build route table. Not in the handoff, which specs four; renderers are
-  documented as pluggable and the treatment suits a listing.
+- **`ls -l` renders as a table** — on the same `Table` component as the build
+  route table, so a listing and a route table cannot drift apart into two
+  hand-built grids.
 - **Split copy actions** (`COPY OUT` / `COPY CMD`) instead of one button that
   grabs command and output together.
 - **`⌘[` / `⌘]` step between blocks** — navigation the block model makes possible
   and the design does not mention.
 - **Completion notifications** for commands that finish while the window is in
   the background, gated on a 10s threshold so fast commands stay silent.
-- **Blocks carry a per-session ordinal** (`0042`), shown dim in the header and in
-  search results. It makes the stream read as an addressable log and gives
+- **Blocks carry a per-session ordinal** (`042`), zero-padded in the panel header
+  and in search results. It makes the stream read as an addressable log and gives
   `⌘[`/`⌘]` and search hits a visible coordinate.
-- **Remote sessions are structurally marked**, not just dot-coloured: a `⇄` glyph
-  and a caution-hued left edge in the rail, and the hostname in the pane header.
-  Which machine you are typing into is the most consequential thing to be wrong
-  about. The handoff leaves **ssh disconnect undesigned**, so this establishes
-  only the "this is elsewhere" vocabulary and deliberately invents no failure
-  state.
-- **Panels carry a second inset hairline**, implying the plate thickness the
-  film's surfaces have. Replaces what glow used to do, without glow.
+- **Remote sessions are structurally marked**, not just dot-coloured: a globe
+  icon on the tab, a cyan dot, and the hostname in the pane header. Which machine
+  you are typing into is the most consequential thing to be wrong about. **ssh
+  disconnect is left undesigned**, so this establishes only the "this is
+  elsewhere" vocabulary and deliberately invents no failure state.
+- **A clean exit is not an error.** `PROCESS EXITED (CODE 0)` is neutral —
+  `--line-200` on `--surface-2`. The old build painted a zero exit code in the
+  error colour, which called a shell doing exactly what it was told a failure.
+  Only a non-zero code takes the danger treatment.
+- **The ghost suggestion is `--ink-300`, not `--ink-400`.** A Tab-acceptable
+  suggestion is copy the user acts on, and `--ink-400` is disabled-state only.
+- **The split divider is one 1px line**, not a 4px slab with a grip. Depth does
+  the work instead: the focused pane sits on `--void` with an amber label, the
+  unfocused one on `--surface-1` a step dimmer throughout. The hit area is
+  widened by a transparent overlay so the line stays a line.
+- **`src/harness/`** renders the real components against fixture data at
+  `/harness.html` under `npm run dev`. The app itself cannot run in a plain
+  browser — Tauri's IPC bridge is absent — and a type checker cannot see a badge
+  that vanished into the header fill behind it. Not included in the build.
 
-### The animation budget — a deliberate deviation
+### The animation budget is zero
 
-The handoff states the animation set is complete and says not to add more. Four
-keyframes were added anyway, and the reasoning is uniform: each one dramatises a
-**discrete event the user caused**, and none of them animate while the user is
-idle. A terminal is stared at for hours, so ambient motion is the thing to avoid —
-not motion as such.
+The system is **still**. No entrance animation, no easing with personality, no
+bounce, no fade-in: a machine display either shows a state or it doesn't. There
+is deliberately not one `@keyframes` in `src/`, and a test asserts it.
 
-| Keyframe | Event | Duration |
-|---|---|---|
-| `idsweep` | Identity change | 250ms |
-| `trace` | Split created | 180ms |
-| `bootbr` | Cold boot, brackets | ~400ms total |
-| `bootwd` | Cold boot, wordmark | ~400ms total |
+`--transition-state` transitions **only** `color`, `background-color` and
+`border-color`, at 80ms linear, dropping to 0ms under
+`prefers-reduced-motion: reduce`. Transitioning `transform`, `opacity`, `width`
+or `box-shadow` is wrong by construction — the transition exists to soften a
+colour change, not to move anything. Overlays appear at 0ms.
 
-All four respect `prefers-reduced-motion: reduce` by skipping entirely. The boot
-sequence additionally has a Settings toggle, and is architecturally incapable of
-delaying the first prompt: it renders as a sibling of the app tree with
-`pointer-events: none`, `init()` is neither wrapped nor awaited around it, and
-init finishing tears the overlay down mid-flight. Its lifetime is
-`min(init, 400ms, first keypress, first click)`.
+An earlier build spent four keyframes on a cold boot, an identity sweep, a
+divider trace, plus a blinking caret and a pulsing status dot. All of them are
+gone:
 
-The still-unused `spn` keyframe from the original token set remains, superseded by
-streaming output. It is kept only because the handoff lists it.
+| Was | Now |
+|---|---|
+| Cold boot sequence | A static attach frame — what is on screen before first paint, not a sequence anyone waits through |
+| Identity sweep | No identity to switch |
+| Divider trace | The divider is one 1px line and simply exists |
+| Caret blink | `Prompt` draws a static block caret |
+| Status pulse | `Badge` draws a static dot |
+
+The one blink left is xterm's own cursor, which is a real terminal cursor in a
+real emulator. The stillness rule governs chrome.
 
 ## Not built — needs a design pass
 
@@ -343,7 +412,7 @@ when clicked is worse than one that says it isn't ready.
 verifies them.
 
 Nothing about signing is baked into this repo — the certificate and Apple ID
-belong to whoever is building. If you only want to run TRMNL, none of this
+belong to whoever is building. If you only want to run CRGGR.sh, none of this
 applies: `npm run app` and `npm run app:build` need no identity at all. Signing
 matters only for a build you intend to hand to someone else.
 
@@ -394,7 +463,7 @@ Two things worth knowing:
 Verify a build with:
 
 ```bash
-spctl -a -vvv -t install src-tauri/target/release/bundle/macos/TRMNL.app
+spctl -a -vvv -t install src-tauri/target/release/bundle/macos/CRGGR.sh.app
 ```
 
 `accepted` with `source=Notarized Developer ID` is the goal;

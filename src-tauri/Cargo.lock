@@ -565,6 +565,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "crggr"
+version = "0.6.0"
+dependencies = [
+ "anyhow",
+ "parking_lot",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-os",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4269,24 +4287,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.19",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "trmnl"
-version = "0.5.6"
-dependencies = [
- "anyhow",
- "parking_lot",
- "portable-pty",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-os",
 ]
 
 [[package]]

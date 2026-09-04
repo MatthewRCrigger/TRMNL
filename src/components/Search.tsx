@@ -1,16 +1,17 @@
-/** Scrollback search — ⌘⇧F.
+/** `SCROLLBACK .FIND` — ⌘⇧F.
  *
- * The keybinding was in the design's keymap with no UI specified, so this is a
- * minimal treatment built from existing vocabulary (the palette's panel, the
- * block spine, micro-labels) rather than a new visual language.
+ * A panel, not a dialog: it is non-modal and anchored, so the stream stays
+ * live behind it and stepping through hits scrolls the blocks underneath. It
+ * sits top-right of the pane specifically so it never covers the composer —
+ * searching and typing are not mutually exclusive.
  *
- * Searches commands and output across the focused session's blocks and lets the
- * user step through matches; selecting one scrolls it into view and flags it.
+ * Searches commands and output across the focused session's blocks.
  */
 
 import { useEffect, useMemo, useRef } from 'react'
 
 import { useStore } from '../state/store'
+import { Icon, Pagination, Panel } from './grid'
 
 export interface SearchHit {
   blockId: string
@@ -80,45 +81,43 @@ export function Search() {
   }
 
   return (
-    <div className="search" role="dialog" aria-label="Search scrollback">
-      <span className="bracket bracket--tl" style={{ width: 11, height: 11 }} />
-
+    <Panel
+      className="search"
+      heading="SCROLLBACK .FIND"
+      // --line-100 rather than the panel default: this floats over the stream,
+      // so it has to read as nearer than everything behind it — and brightness
+      // is how nearness is expressed here, there being no shadow to reach for.
+      panelColor="var(--line-100)"
+      contentBorder={false}
+      headerMeta={query ? <span className="search__echo">{query}</span> : undefined}
+      headerRight={
+        <button className="search__close" onClick={closeSearch} aria-label="Close search" type="button">
+          <Icon name="x" size={12} />
+        </button>
+      }
+    >
       <div className="search__bar">
-        <span className="micro">SEARCH</span>
-        <input
-          ref={inputRef}
-          className="search__input"
-          value={query}
-          placeholder="Find in scrollback…"
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={onKeyDown}
-          spellCheck={false}
-          aria-label="Search scrollback"
+        <div className="search__field">
+          <input
+            ref={inputRef}
+            className="search__input"
+            value={query}
+            placeholder="find in scrollback…"
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={onKeyDown}
+            spellCheck={false}
+            aria-label="Search scrollback"
+          />
+          {!query && <span className="search__caret" aria-hidden />}
+        </div>
+
+        <Pagination
+          label="MATCH"
+          current={hits.length === 0 ? 0 : activeIndex + 1}
+          total={hits.length}
+          onPrev={() => moveSearchSelection(-1, hits.length)}
+          onNext={() => moveSearchSelection(1, hits.length)}
         />
-        <span className="search__count">
-          {query ? `${hits.length === 0 ? 0 : activeIndex + 1}/${hits.length}` : '—'}
-        </span>
-        <button
-          className="search__step is-btn"
-          onClick={() => moveSearchSelection(-1, hits.length)}
-          disabled={hits.length === 0}
-          aria-label="Previous match"
-          type="button"
-        >
-          ↑
-        </button>
-        <button
-          className="search__step is-btn"
-          onClick={() => moveSearchSelection(1, hits.length)}
-          disabled={hits.length === 0}
-          aria-label="Next match"
-          type="button"
-        >
-          ↓
-        </button>
-        <button className="search__close is-btn" onClick={closeSearch} aria-label="Close search" type="button">
-          ✕
-        </button>
       </div>
 
       {query && hits.length > 0 && (
@@ -126,34 +125,24 @@ export function Search() {
           {hits.slice(0, 40).map((hit, i) => (
             <button
               className="search__hit"
-              data-active={i === activeIndex}
+              data-active={i === activeIndex || undefined}
               key={`${hit.blockId}-${i}`}
               onClick={() => useStore.getState().setSearchIndex(i)}
               type="button"
             >
-              <span className="search__hitseq">{String(hit.seq).padStart(4, '0')}</span>
-              <span className="search__hitcmd">{hit.cmd || '—'}</span>
-              <span className="search__hitline">
+              <span className="search__seq">{String(hit.seq).padStart(3, '0')}</span>
+              <span className="search__line">
                 {hit.line.slice(Math.max(0, hit.at - 24), hit.at)}
-                <mark className="search__mark">
-                  {hit.line.slice(hit.at, hit.at + hit.length)}
-                </mark>
+                <mark className="search__mark">{hit.line.slice(hit.at, hit.at + hit.length)}</mark>
                 {hit.line.slice(hit.at + hit.length, hit.at + hit.length + 48)}
               </span>
-              <span className="search__hitsrc micro">{hit.source}</span>
             </button>
           ))}
         </div>
       )}
 
-      {query && hits.length === 0 && <div className="search__empty">No matches</div>}
-
-      <div className="search__foot">
-        <span>↵ NEXT</span>
-        <span>⇧↵ PREVIOUS</span>
-        <span>ESC CLOSE</span>
-      </div>
-    </div>
+      {query && hits.length === 0 && <div className="search__empty">NO MATCHES</div>}
+    </Panel>
   )
 }
 

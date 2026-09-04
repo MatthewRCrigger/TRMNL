@@ -185,12 +185,12 @@ describe('stripAnsi', () => {
 describe('hook version announcement', () => {
   it('parses the private hooks sequence', () => {
     const p = new Osc133Parser()
-    expect(p.feed('\x1b]1337;trmnl-hooks=1\x07')).toEqual([{ type: 'hooks', version: 1 }])
+    expect(p.feed('\x1b]1337;crggr-hooks=1\x07')).toEqual([{ type: 'hooks', version: 1 }])
   })
 
   it('parses a multi-digit version', () => {
     const p = new Osc133Parser()
-    expect(p.feed('\x1b]1337;trmnl-hooks=42\x07')).toEqual([{ type: 'hooks', version: 42 }])
+    expect(p.feed('\x1b]1337;crggr-hooks=42\x07')).toEqual([{ type: 'hooks', version: 42 }])
   })
 
   it('passes other OSC 1337 sequences through as text', () => {
@@ -202,7 +202,7 @@ describe('hook version announcement', () => {
 
   it('survives being split across chunks', () => {
     const p = new Osc133Parser()
-    const events = [...p.feed('\x1b]1337;trmnl-'), ...p.feed('hooks=1\x07')]
+    const events = [...p.feed('\x1b]1337;crggr-'), ...p.feed('hooks=1\x07')]
     expect(events).toEqual([{ type: 'hooks', version: 1 }])
   })
 })

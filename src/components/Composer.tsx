@@ -1,19 +1,30 @@
 /** Composer — the input line.
  *
- * Uses the ghost-suggestion pattern from the design: a visible span stack
- * (typed text + caret + ghost remainder) with a transparent <input> positioned
- * over it. This avoids text measurement entirely, which is why the handoff says
- * to keep it.
+ * Uses the ghost-suggestion pattern from the design: an invisible copy of the
+ * typed text acts as a spacer so the suggestion starts in the right column,
+ * with the real <input> laid over it. This avoids text measurement entirely,
+ * which is why the handoff says to keep it.
+ *
+ * The ghost is --ink-300, not --ink-400. A Tab-acceptable suggestion is
+ * load-bearing copy — the user acts on it — and --ink-400 is for disabled state
+ * only. That distinction is called out as a trap in the token table and this is
+ * the place it would be sprung.
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+
+import { Button, KeyCap, Panel } from './grid'
 
 interface Props {
   value: string
   ghost: string
   focused: boolean
   shellLabel: string
+  /** Prompt context — `user@host path $`. */
+  user: string
+  host: string
+  path: string
   onChange: (value: string) => void
   onSubmit: () => void
   onAcceptGhost: () => void
@@ -31,6 +42,9 @@ export function Composer({
   ghost,
   focused,
   shellLabel,
+  user,
+  host,
+  path,
   onChange,
   onSubmit,
   onAcceptGhost,
@@ -159,11 +173,16 @@ export function Composer({
 
   return (
     <div className="composer no-drag" data-disabled={disabled} onMouseDown={onFocus}>
+      {/* `COMPLETE .PATH` — a panel above the composer, not a dropdown. The
+          candidates come from the real shell, which is what the footnote says:
+          this list is never guessed. */}
       {candidates.length > 0 && (
-        <div className="completions">
-          <div className="completions__head micro">
-            {candidates.length} MATCHES
-          </div>
+        <Panel
+          className="completions"
+          heading="COMPLETE .PATH"
+          index={{ current: candidates.length }}
+          contentBorder={false}
+        >
           <div className="completions__list">
             {candidates.map((candidate) => (
               <span className="completions__item" key={candidate}>
@@ -171,51 +190,72 @@ export function Composer({
               </span>
             ))}
           </div>
-        </div>
+          <div className="completions__foot">delegated to the real shell — never guessed</div>
+        </Panel>
       )}
 
-      <span className="bracket bracket--tl" style={{ width: 9, height: 9 }} />
-
       <div className="composer__row">
-      <span className="composer__prompt">❯</span>
+        <div className="composer__field">
+          {/* The prompt sits inside the field rather than beside it, so the
+              whole `user@host path $ command` line reads as one string of shell
+              text the way it does in a settled block. */}
+          <span className="composer__user">{user}</span>
+          <span className="composer__host">@{host}</span>
+          <span className="composer__path">{path}</span>
+          <span className="composer__sigil">$</span>
 
-      <div className="composer__field">
-        {/* Ghost layer, behind the input. It holds an invisible copy of the typed
-            text purely as a spacer so the suggestion starts in the right column —
-            same trick as before, no text measurement — but it no longer draws the
-            caret or the typed text. The input itself is now visible and renders
-            both, natively. */}
-        <span className="composer__ghosts" aria-hidden="true">
-          <span className="composer__spacer">{value}</span>
-          <span className="composer__ghost">{ghost}</span>
-        </span>
-        <input
-          ref={inputRef}
-          className="composer__input"
-          value={value}
-          onChange={(e) => {
-            // Typing supersedes the candidate list.
-            if (candidates.length > 0) setCandidates([])
-            onChange(e.target.value)
-          }}
-          onKeyDown={onKeyDown}
-          onFocus={onFocus}
-          spellCheck={false}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          aria-label="Command input"
-          disabled={disabled}
-        />
-      </div>
+          <span className="composer__entry">
+            {/* Ghost layer, behind the input: an invisible copy of the typed
+                text as a spacer so the suggestion starts in the right column —
+                no text measurement — with the real input laid over it. */}
+            <span className="composer__ghosts" aria-hidden="true">
+              <span className="composer__spacer">{value}</span>
+              <span className="composer__ghost">{ghost}</span>
+            </span>
+            <input
+              ref={inputRef}
+              className="composer__input"
+              value={value}
+              onChange={(e) => {
+                // Typing supersedes the candidate list.
+                if (candidates.length > 0) setCandidates([])
+                onChange(e.target.value)
+              }}
+              onKeyDown={onKeyDown}
+              onFocus={onFocus}
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              aria-label="Command input"
+              disabled={disabled}
+            />
+          </span>
+        </div>
+
+        <Button variant="primary" size="lg" onClick={onSubmit} disabled={disabled}>
+          RUN ↵
+        </Button>
       </div>
 
-      {/* Reserved line. The hint used to sit in the input's flex row, so a long
+      {/* Reserved row. The hint used to sit in the input's flex row, so a long
           resolved path stole width and the input visibly shrank as you typed.
-          Giving it its own fixed-height row below keeps the input a constant
-          width and the composer a constant height. */}
+          Its own fixed-height row keeps the input a constant width and the
+          composer a constant height. */}
       <div className="composer__meta">
-        <span className="composer__hint">{resolved ?? shellLabel}</span>
+        <span className="composer__hints">
+          <span className="composer__hint">
+            <KeyCap size="sm">⇥</KeyCap> COMPLETE
+          </span>
+          <span className="composer__hint">
+            <KeyCap size="sm">⌘K</KeyCap> PALETTE
+          </span>
+          <span className="composer__hint">
+            <KeyCap size="sm">⌘⇧F</KeyCap> FIND
+          </span>
+        </span>
+        <span className="leader" />
+        <span className="composer__resolved">{resolved ?? shellLabel}</span>
       </div>
     </div>
   )

@@ -1,17 +1,24 @@
-/** Fresh-session (welcome) state.
+/** `SESSION .INIT` — the panel that opens every session.
  *
- * Shown in place of the block stream when a session has zero blocks — every new
- * session, every empty profile, every fresh split pane.
+ * It stays at the top of the stream for the session's life rather than being
+ * swapped out by the first command, so scrolling all the way back always
+ * returns you to where the session started.
  *
- * The DETECTED line and SUGGESTED commands are real product behavior: the cwd is
- * inspected on the Rust side and every suggestion comes from a file that was
+ * Its `ATTACHED` badge and the four-row identity grid are permanent; the
+ * suggestions, recents and key hints below are cold-start scaffolding and drop
+ * away once there is real history, where they would be stale noise sitting on
+ * top of it.
+ *
+ * The DETECTED line and every suggestion are real product behaviour: the cwd is
+ * inspected on the Rust side and each suggestion comes from a file that was
  * actually read. Never show a suggestion that would fail.
  */
 
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 
-import type { HostInfo, Session } from '../state/store'
+import type { HostInfo, PanelSettings, Session } from '../state/store'
+import { Badge, KeyCap, Panel } from './grid'
 
 interface Detection {
   stack: string
@@ -26,10 +33,13 @@ interface Props {
   session: Session
   host: HostInfo | null
   compact: boolean
+  panel: PanelSettings
+  /** Total blocks in the session, for the panel's `000 | 047` index. */
+  total: number
   onRun: (cmd: string) => void
 }
 
-export function Welcome({ session, host, compact, started = false, onRun }: Props) {
+export function Welcome({ session, host, compact, started = false, panel, total, onRun }: Props) {
   const [detection, setDetection] = useState<Detection | null>(null)
 
   useEffect(() => {
@@ -45,99 +55,97 @@ export function Welcome({ session, host, compact, started = false, onRun }: Prop
   }, [session.cwd])
 
   const recent = [...session.history].reverse().slice(0, 3)
+  const branch = session.branch || detection?.branch
 
   return (
-    <div className="welcome" data-compact={compact} data-started={started}>
-      <div className="welcome__mark">
-        <span className="welcome__word">TRMNL</span>
-        <span className="welcome__ver">
-          {host ? `${host.version} · DARWIN ${host.osVersion} ${host.arch.toUpperCase()}` : ''}
+    <Panel
+      className="init"
+      data-compact={compact || undefined}
+      data-started={started || undefined}
+      heading="SESSION .INIT"
+      panelBorder={panel.panelBorder}
+      headerBorder
+      // The init panel's body is a key/value grid, not output — a well around it
+      // would frame a layout rather than a machine's words.
+      contentBorder={false}
+      // Never filled: this is not the block you are reading, it is where the
+      // session began. A filled header here would compete with the latest block
+      // for the eye every time you scrolled to the top.
+      headerFilled={false}
+      // `000 | 047` once there is a stream to be at the top of. With no blocks
+      // yet the total is 0, and `000 | 000` reads as a broken counter rather
+      // than as an empty session — so the pair collapses to the position alone.
+      index={total > 0 ? { current: 0, total } : { current: 0 }}
+      headerRight={
+        <Badge tone="success" dot>
+          ATTACHED
+        </Badge>
+      }
+    >
+      <div className="init__grid">
+        <span className="init__key">PATH</span>
+        <span className="init__val init__val--bright">{prettyPath(session.cwd, host?.home)}</span>
+
+        <span className="init__key">BRANCH</span>
+        <span className="init__val">{branch ? <>⑂ {branch}</> : '—'}</span>
+
+        <span className="init__key">DETECTED</span>
+        <span className="init__val">{detection?.stack || '…'}</span>
+
+        <span className="init__key">SHELL</span>
+        <span className="init__val">
+          {shellName(host?.shell)} · {session.host}
         </span>
       </div>
 
-      <div className="welcome__grid">
-        <span className="welcome__key">SESSION</span>
-        <span className="welcome__val">
-          {session.name} · {session.host}
-        </span>
-
-        <span className="welcome__key">PATH</span>
-        <span className="welcome__val">{prettyPath(session.cwd, host?.home)}</span>
-
-        <span className="welcome__key">BRANCH</span>
-        <span className="welcome__val">
-          {session.branch || detection?.branch ? (
-            <>⑂ {session.branch || detection?.branch}</>
-          ) : (
-            '—'
-          )}
-        </span>
-
-        <span className="welcome__key">DETECTED</span>
-        <span className="welcome__val">{detection?.stack || '…'}</span>
-      </div>
-
-      {/* Suggestions, recents and the key hints are all cold-start scaffolding.
-          Once the session has real history they would be stale noise sitting above
-          it, so they drop away and the masthead keeps only the identity grid. */}
       {!started && detection && detection.suggestions.length > 0 && (
-        <section className="welcome__section">
-          <div className="welcome__head">
-            <span className="micro">SUGGESTED</span>
-            <span className="welcome__source">{detection.source}</span>
-            <span className="rule" />
+        <section className="init__section">
+          <div className="init__sechead">
+            <span className="init__seclabel">SUGGESTED</span>
+            <span className="leader" />
+            <span className="init__source">{detection.source}</span>
           </div>
           {detection.suggestions.map((s) => (
-            <button
-              className="welcome__cmd"
-              key={s.cmd}
-              onClick={() => onRun(s.cmd)}
-              type="button"
-            >
-              <span className="welcome__chev">❯</span>
-              <span className="welcome__cmdtext">{s.cmd}</span>
-              <span className="welcome__note">{s.note}</span>
-              <span className="kbd">↵</span>
+            <button className="init__cmd" key={s.cmd} onClick={() => onRun(s.cmd)} type="button">
+              <span className="init__sigil">$</span>
+              <span className="init__cmdtext">{s.cmd}</span>
+              <span className="init__note">{s.note}</span>
+              <span className="init__cmdgap" />
+              <KeyCap size="sm">↵</KeyCap>
             </button>
           ))}
         </section>
       )}
 
       {!started && recent.length > 0 && (
-        <section className="welcome__section">
-          <div className="welcome__head">
-            <span className="micro">RECENT</span>
-            <span className="rule" />
+        <section className="init__section">
+          <div className="init__sechead">
+            <span className="init__seclabel">RECENT</span>
+            <span className="leader" />
           </div>
           {recent.map((cmd) => (
-            <button
-              className="welcome__recent"
-              key={cmd}
-              onClick={() => onRun(cmd)}
-              type="button"
-            >
-              <span className="welcome__chev">❯</span>
-              <span className="welcome__cmdtext">{cmd}</span>
+            <button className="init__cmd" key={cmd} onClick={() => onRun(cmd)} type="button">
+              <span className="init__sigil">$</span>
+              <span className="init__cmdtext">{cmd}</span>
             </button>
           ))}
         </section>
       )}
 
       {!started && (
-      <div className="welcome__hints">
-        <span>
-          <span className="welcome__hintkey">⌘K</span> PALETTE
-        </span>
-        <span>
-          <span className="welcome__hintkey">⌘D</span> SPLIT
-        </span>
-        <span>
-          <span className="welcome__hintkey">⇥</span> ACCEPT SUGGESTION
-        </span>
-        <span className="welcome__eol">END OF LINE</span>
-      </div>
+        <div className="init__hints">
+          <span className="init__hint">
+            <KeyCap size="sm">⌘K</KeyCap> PALETTE
+          </span>
+          <span className="init__hint">
+            <KeyCap size="sm">⌘D</KeyCap> SPLIT
+          </span>
+          <span className="init__hint">
+            <KeyCap size="sm">⇥</KeyCap> ACCEPT SUGGESTION
+          </span>
+        </div>
       )}
-    </div>
+    </Panel>
   )
 }
 
@@ -147,4 +155,10 @@ function prettyPath(path: string, home?: string): string {
     return rest === '' ? '~' : `~${rest}`
   }
   return path
+}
+
+/** Just the shell's basename — the full path is in Settings, not the masthead. */
+function shellName(shell?: string): string {
+  if (!shell) return '—'
+  return shell.split('/').at(-1) ?? shell
 }

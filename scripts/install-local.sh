@@ -18,8 +18,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-app="src-tauri/target/release/bundle/macos/TRMNL.app"
-dest="/Applications/TRMNL.app"
+# Derived from tauri.conf.json rather than hardcoded: the bundle and binary
+# names are the app's to decide, and a rename that left this script pointing at
+# a stale path would fail with "no build at …" while a perfectly good bundle sat
+# next to it.
+product="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+binary="$(node -p "require('./src-tauri/tauri.conf.json').mainBinaryName || require('./src-tauri/tauri.conf.json').productName")"
+
+app="src-tauri/target/release/bundle/macos/$product.app"
+dest="/Applications/$product.app"
 
 if [[ "${1:-}" == "--build" ]]; then
   # Only the --build path needs an identity; installing an existing bundle does
@@ -42,8 +49,8 @@ fi
 # written and the running app pointing at files that no longer exist. Refuse
 # rather than corrupt it; the version being replaced is usually the one the user
 # is looking at.
-if pgrep -f "^/Applications/TRMNL.app/Contents/MacOS/TRMNL$" >/dev/null 2>&1; then
-  echo "error: TRMNL is running from /Applications — quit it first (⌘Q)" >&2
+if pgrep -f "^$dest/Contents/MacOS/$binary\$" >/dev/null 2>&1; then
+  echo "error: $product is running from /Applications — quit it first (⌘Q)" >&2
   exit 1
 fi
 
