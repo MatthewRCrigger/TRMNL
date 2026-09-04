@@ -412,7 +412,37 @@ export function Harness() {
             </div>
           </Section>
 
-          <Section title="06 — ALERTS &amp; NAV">
+          <Section title="06 — CONTEXT MENU">
+            {/* Width 260, 2px --line-100, 8px radius, rows at 36px with the
+                chord right-aligned in mono. Separators are a top rule on the
+                first row of each group, not a dedicated element. */}
+            <div className="hx__ctx">
+              <div className="ctxmenu" style={{ position: 'static' }}>
+                {[
+                  { label: 'New Session', kbd: '⌘T' },
+                  { label: 'Clone Session' },
+                  { label: 'Split Right', kbd: '⌘D', group: true },
+                  { label: 'Split Down', kbd: '⇧⌘D' },
+                  { label: 'Command Palette', kbd: '⌘K', group: true },
+                  { label: 'Clear Buffer', kbd: '⌘⌫' },
+                  { label: 'Close Session', kbd: '⌘W', group: true, danger: true },
+                ].map((e) => (
+                  <button
+                    key={e.label}
+                    className="ctxmenu__item"
+                    data-group={e.group || undefined}
+                    data-danger={e.danger || undefined}
+                    type="button"
+                  >
+                    <span className="ctxmenu__label">{e.label}</span>
+                    {e.kbd && <span className="ctxmenu__kbd">{e.kbd}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Section>
+
+          <Section title="07 — ALERTS &amp; NAV">
             <Alert
               tone="danger"
               title="SHELL NOT RUNNING"

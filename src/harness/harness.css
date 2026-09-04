@@ -101,3 +101,5 @@ body { background: var(--void); }
 .hx__panes .pane { flex: 1; }
 
 .hx__panebody { padding: 16px; }
+
+.hx__ctx { display: flex; }
