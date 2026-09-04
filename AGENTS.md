@@ -223,6 +223,21 @@ could still be on an old build.
 `Contents/MacOS` reads as a file extension. Build scripts derive the bundle name
 from `tauri.conf.json` rather than hardcoding it.
 
+**Finder shows `CRGGR.sh.app` in full, and that is not a bug to fix.** macOS
+hides a file's extension only when it can tell which part *is* the extension;
+`CRGGR.sh.app` offers two candidates, so Finder shows the whole name rather than
+risk hiding the wrong one. Verified with two throwaway bundles under identical
+settings: `Foobar.app` displays as `Foobar`, `Foo.sh.app` displays as
+`Foo.sh.app`.
+
+`CFBundleDisplayName` does not override this — it names the app in the menu bar
+and the About box, both of which already read `CRGGR.sh`, but the icon label is
+the filename. The only real fix is renaming the bundle to `CRGGR.app`, which was
+considered and rejected: it would hide the extension in the Applications folder
+but leave the Dock reading `CRGGR.sh`, giving the same app two different names
+in the two places you look at it most. A consistent `CRGGR.sh.app` beats a
+tidier Finder and a contradictory Dock.
+
 The hook handshake key (`1337;crggr-hooks=N`) is parsed in `src/term/osc133.ts`
 and emitted in `shell_integration.rs` — **rename one and you must rename the
 other**, or shell integration silently stops reporting command boundaries and
